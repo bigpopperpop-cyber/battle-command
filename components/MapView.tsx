@@ -16,6 +16,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
 
+  // Mouse Handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     setDragStart({ x: e.clientX - offset.x, y: e.clientY - offset.y });
@@ -26,13 +27,33 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     setOffset({ x: e.clientX - dragStart.x, y: e.clientY - dragStart.y });
   };
 
+  // Touch Handlers
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setIsDragging(true);
+    const touch = e.touches[0];
+    setDragStart({ x: touch.clientX - offset.x, y: touch.clientY - offset.y });
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (!isDragging) return;
+    const touch = e.touches[0];
+    setOffset({ x: touch.clientX - dragStart.x, y: touch.clientY - dragStart.y });
+  };
+
+  const handleDragEnd = () => {
+    setIsDragging(false);
+  };
+
   return (
     <div 
-      className="w-full h-full relative overflow-hidden bg-slate-950 cursor-grab active:cursor-grabbing"
+      className="w-full h-full relative overflow-hidden bg-slate-950 cursor-grab active:cursor-grabbing touch-none"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
-      onMouseUp={() => setIsDragging(false)}
-      onMouseLeave={() => setIsDragging(false)}
+      onMouseUp={handleDragEnd}
+      onMouseLeave={handleDragEnd}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleDragEnd}
     >
       <div 
         className="absolute transition-transform duration-75"
