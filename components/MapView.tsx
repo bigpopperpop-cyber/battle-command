@@ -1,6 +1,6 @@
 
 import React, { useState, useRef } from 'react';
-import { Planet, Ship } from '../types';
+import { Planet, Ship, ShipType } from '../types';
 import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
 
 interface MapViewProps {
@@ -54,18 +54,15 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
     }
   };
 
-  // Helper to calculate ship visual position
   const getShipVisualPosition = (ship: Ship) => {
     if (ship.status !== 'ORBITING' || !ship.currentPlanetId) {
       return { x: ship.x, y: ship.y };
     }
 
-    // Find all ships orbiting the same planet to space them out
     const fleetAtPlanet = ships.filter(s => s.currentPlanetId === ship.currentPlanetId && s.status === 'ORBITING');
     const index = fleetAtPlanet.findIndex(s => s.id === ship.id);
     const total = fleetAtPlanet.length;
     
-    // Distance from planet center (orbit radius)
     const orbitRadius = 45; 
     const angle = (index * (360 / total)) * (Math.PI / 180);
     
@@ -73,6 +70,43 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
       x: ship.x + Math.cos(angle) * orbitRadius,
       y: ship.y + Math.sin(angle) * orbitRadius
     };
+  };
+
+  const ShipIcon = ({ type, color, isSelected }: { type: ShipType, color: string, isSelected: boolean }) => {
+    const size = isSelected ? 32 : 24;
+    const glowColor = `${color}88`;
+
+    switch (type) {
+      case 'SCOUT':
+        return (
+          <div className="relative flex items-center justify-center transition-all duration-300" style={{ width: size, height: size }}>
+            <svg viewBox="0 0 24 24" className="w-full h-full drop-shadow-lg" style={{ filter: `drop-shadow(0 0 8px ${glowColor})` }}>
+              <path d="M12 2L4 22L12 18L20 22L12 2Z" fill={color} stroke="white" strokeWidth={isSelected ? 2 : 1} />
+            </svg>
+            <span className="absolute text-[8px] pointer-events-none mb-1">🚀</span>
+          </div>
+        );
+      case 'FREIGHTER':
+        return (
+          <div className="relative flex items-center justify-center transition-all duration-300" style={{ width: size, height: size }}>
+            <svg viewBox="0 0 24 24" className="w-full h-full drop-shadow-lg" style={{ filter: `drop-shadow(0 0 8px ${glowColor})` }}>
+              <path d="M4 6L12 2L20 6V18L12 22L4 18V6Z" fill={color} stroke="white" strokeWidth={isSelected ? 2 : 1} />
+            </svg>
+            <span className="absolute text-[10px] pointer-events-none">📦</span>
+          </div>
+        );
+      case 'WARSHIP':
+        return (
+          <div className="relative flex items-center justify-center transition-all duration-300" style={{ width: size, height: size }}>
+            <svg viewBox="0 0 24 24" className="w-full h-full drop-shadow-lg" style={{ filter: `drop-shadow(0 0 12px ${glowColor})` }}>
+              <path d="M12 2L2 22L12 16L22 22L12 2ZM12 6L18 18L12 14L6 18L12 6Z" fill={color} stroke="white" strokeWidth={isSelected ? 2 : 1} />
+            </svg>
+            <span className="absolute text-[10px] pointer-events-none mb-2">⚔️</span>
+          </div>
+        );
+      default:
+        return <div className="w-4 h-4 rounded-full bg-white" />;
+    }
   };
 
   return (
@@ -114,19 +148,16 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
             className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group z-10"
             style={{ left: planet.x, top: planet.y }}
           >
-            {/* Selection Orbit Path */}
             {selectedId === planet.id && (
               <div className="absolute inset-0 w-[90px] h-[90px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 border-dashed animate-[spin_20s_linear_infinite]" 
                    style={{ left: '50%', top: '50%' }} />
             )}
 
-            {/* Tutorial resonance ring pulse */}
             {tutorialTargetId === planet.id && (
               <div className="absolute inset-0 w-20 h-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-500 animate-ping opacity-30 pointer-events-none" 
                    style={{ left: '50%', top: '50%' }} />
             )}
 
-            {/* Tutorial Anchored Tooltip */}
             {tutorialTargetId === planet.id && (
               <div className="absolute top-[-90px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none animate-bounce z-[60] w-max">
                 <div className="bg-cyan-500 text-white px-5 py-2.5 rounded-2xl font-bold text-xs shadow-[0_0_30px_rgba(6,182,212,0.5)] uppercase tracking-tighter whitespace-nowrap border border-white/20">
@@ -152,25 +183,23 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
 
         {ships.map(ship => {
           const visualPos = getShipVisualPosition(ship);
+          const isSelected = selectedId === ship.id;
           return (
             <div
               key={ship.id}
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
-              className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-500 z-20"
+              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-500 z-20 ${isSelected ? 'z-30' : ''}`}
               style={{ left: visualPos.x, top: visualPos.y }}
             >
-               <div 
-                className={`w-6 h-6 rotate-45 border-2 transition-all ${selectedId === ship.id ? 'scale-150 border-white shadow-[0_0_20px_#fff]' : 'border-white/20'}`}
-                style={{ 
-                  backgroundColor: PLAYER_COLORS[ship.owner],
-                  boxShadow: `0 0 15px ${PLAYER_COLORS[ship.owner]}88`
-                }}
-              />
-              {/* Optional: Ship Label for better identification */}
-              {selectedId === ship.id && (
-                <div className="absolute top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black/80 px-2 py-1 rounded text-[8px] font-bold text-white border border-white/20">
-                  {ship.name}
+              <ShipIcon type={ship.type} color={PLAYER_COLORS[ship.owner]} isSelected={isSelected} />
+              
+              {isSelected && (
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 whitespace-nowrap bg-slate-900/90 px-3 py-1.5 rounded-xl text-[10px] font-bold text-white border border-white/20 shadow-xl backdrop-blur-md">
+                   <div className="flex flex-col items-center">
+                      <span className="uppercase tracking-widest opacity-60 text-[7px]">{ship.type}</span>
+                      <span>{ship.name}</span>
+                   </div>
                 </div>
               )}
             </div>
