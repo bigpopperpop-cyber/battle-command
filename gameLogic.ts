@@ -3,12 +3,13 @@ import { Planet, Ship, GameState, Owner } from './types';
 
 export const GRID_SIZE = 1200;
 export const PLANET_COUNT = 24;
+export const MIN_PLANET_DISTANCE = 180; // Ensuring planets don't touch or crowd each other
 
 const PLANET_NAMES = [
   "Rigel VII", "Betelgeuse Prime", "Delta Pavonis", "Alpha Centauri", "Sol", 
   "Procyon", "Sirius B", "Vega", "Altair", "Deneb", "Castor", "Pollux", 
   "Antares", "Spica", "Arcturus", "Fomalhaut", "Capella", "Aldebaran",
-  "Regulus", "Castor", "Bellatrix", "Alcor", "Mizar", "Thuban"
+  "Regulus", "Bellatrix", "Alcor", "Mizar", "Thuban", "Denebola"
 ];
 
 export const PLAYER_COLORS: Record<Owner, string> = {
@@ -44,25 +45,46 @@ export const generateInitialState = (
   const actualSeed = seed ?? Math.floor(Math.random() * 1000000);
   const rnd = seededRandom(actualSeed);
 
-  const planets: Planet[] = PLANET_NAMES.slice(0, PLANET_COUNT).map((name, i) => {
+  const planets: Planet[] = [];
+  
+  for (let i = 0; i < PLANET_COUNT; i++) {
     let owner: Owner = 'NEUTRAL';
     if (i < playerCount) {
       owner = `P${i + 1}` as Owner;
     }
 
-    return {
+    let x = 0, y = 0;
+    let attempts = 0;
+    let isTooClose = true;
+
+    // Keep generating coordinates until we find a spot far enough from others
+    while (isTooClose && attempts < 100) {
+      x = Math.floor(rnd() * (GRID_SIZE - 200) + 100);
+      y = Math.floor(rnd() * (GRID_SIZE - 200) + 100);
+      
+      isTooClose = planets.some(p => {
+        const dx = p.x - x;
+        const dy = p.y - y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        return distance < MIN_PLANET_DISTANCE;
+      });
+      
+      attempts++;
+    }
+
+    planets.push({
       id: `p-${i}`,
-      name,
-      x: Math.floor(rnd() * (GRID_SIZE - 200) + 100),
-      y: Math.floor(rnd() * (GRID_SIZE - 200) + 100),
+      name: PLANET_NAMES[i],
+      x,
+      y,
       owner,
       population: owner !== 'NEUTRAL' ? 1000 : 0,
       resources: 500,
       factories: owner !== 'NEUTRAL' ? 5 : 0,
       mines: owner !== 'NEUTRAL' ? 5 : 0,
       defense: owner !== 'NEUTRAL' ? 10 : 0,
-    };
-  });
+    });
+  }
 
   const ships: Ship[] = [];
   const playerCredits: Record<string, number> = {};
@@ -106,7 +128,7 @@ export const generateInitialState = (
     ships,
     playerCredits,
     playerNames,
-    logs: ["Commander, Galaxy initialization complete. Names registered to central hub."],
+    logs: ["Commander, Galactic chart generated. No sector overlaps detected."],
     playerCount,
     aiPlayers,
     isHost: true,
