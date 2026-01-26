@@ -66,62 +66,20 @@ const App: React.FC = () => {
     alert(alertMsg);
   };
 
-  const syncFromClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      const match = text.match(/COMMAND_DATA:([A-Za-z0-9+/=]+)/);
-      const dataStr = match ? match[1] : text.trim();
-      
-      if (!dataStr) throw new Error();
-      
-      const incomingState: GameState = JSON.parse(atob(dataStr));
-      const sender = incomingState.activePlayer;
-
-      setGameState(prev => {
-        if (incomingState.round !== prev.round) {
-          alert(`Round Mismatch! Incoming is Round ${incomingState.round}, but Galaxy is Round ${prev.round}.`);
-          return prev;
-        }
-
-        const mergedPlanets = prev.planets.map(p => 
-          p.owner === sender ? (incomingState.planets.find(ip => ip.id === p.id) || p) : p
-        );
-
-        const mergedShips = prev.ships.map(s => 
-          s.owner === sender ? (incomingState.ships.find(is => is.id === s.id) || s) : s
-        );
-
-        const newReady = prev.readyPlayers.includes(sender) ? prev.readyPlayers : [...prev.readyPlayers, sender];
-
-        return {
-          ...prev,
-          planets: mergedPlanets,
-          ships: mergedShips,
-          readyPlayers: newReady,
-          logs: [`📡 Signal received from ${sender}. Assets synchronized.`, ...prev.logs].slice(0, 15)
-        };
-      });
-
-      alert(`✅ ${sender}'s moves merged into Command!`);
-    } catch (e) {
-      alert("❌ Could not read move data. Make sure you copied the friend's message!");
-    }
-  };
-
   const processGlobalTurn = async () => {
     setIsProcessing(true);
     
-    // Deep copies to ensure immutability during AI move calculation
+    // Deep copies for immutability
     let nextPlanets = gameState.planets.map(p => ({...p}));
     let nextShips = gameState.ships.map(s => ({...s}));
     let nextCredits = { ...gameState.playerCredits };
+    const newLogs: string[] = [`--- Turn ${gameState.round} Results ---`];
 
     // 1. Generate AI Moves
     for (const aiId of gameState.aiPlayers) {
       try {
         const moves = await getAiMoves(gameState, aiId);
         
-        // Apply AI Ship Orders
         if (moves.shipOrders) {
           moves.shipOrders.forEach((order: any) => {
             const ship = nextShips.find(s => s.id === order.shipId);
@@ -133,7 +91,6 @@ const App: React.FC = () => {
           });
         }
 
-        // Apply AI Planet Builds
         if (moves.planetOrders) {
           moves.planetOrders.forEach((order: any) => {
             const planet = nextPlanets.find(p => p.id === order.planetId);
@@ -146,20 +103,11 @@ const App: React.FC = () => {
           });
         }
       } catch (e) {
-        console.error(`AI ${aiId} failed to generate orders:`, e);
+        console.error(`AI ${aiId} failed:`, e);
       }
     }
 
-    // 2. Standard Turn Processing (Movement, Income, etc)
-    const newLogs = [`--- Turn ${gameState.round} Results ---`];
-
-    nextPlanets.forEach(p => {
-      if (p.owner !== 'NEUTRAL') {
-        const income = (p.mines * 50) + (p.factories * 20) + 100;
-        nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
-      }
-    });
-
+    // 2. Movement Phase
     nextShips.forEach(s => {
       if (s.status === 'MOVING' && s.targetPlanetId) {
         const target = nextPlanets.find(p => p.id === s.targetPlanetId);
@@ -169,20 +117,47 @@ const App: React.FC = () => {
           const dist = Math.sqrt(dx * dx + dy * dy);
           const speed = SHIP_SPEEDS[s.type as keyof typeof SHIP_SPEEDS] || 100;
 
-          if (dist < speed) {
+          if (dist <= speed) {
             s.x = target.x;
             s.y = target.y;
             s.status = 'ORBITING';
             s.currentPlanetId = target.id;
-            if (target.owner === 'NEUTRAL') {
-              target.owner = s.owner;
-              newLogs.push(`🚀 ${s.owner} has colonized ${target.name}!`);
-            }
           } else {
             s.x += (dx / dist) * speed;
             s.y += (dy / dist) * speed;
           }
         }
+      }
+    });
+
+    // 3. Colonization & Presence Pass
+    // Check every planet to see if a ship is present and claim neutral ones
+    nextPlanets.forEach(planet => {
+      const shipsPresent = nextShips.filter(s => 
+        Math.abs(s.x - planet.x) < 5 && Math.abs(s.y - planet.y) < 5
+      );
+
+      if (shipsPresent.length > 0) {
+        // If neutral, first ship's owner claims it
+        if (planet.owner === 'NEUTRAL') {
+          const newOwner = shipsPresent[0].owner;
+          planet.owner = newOwner;
+          planet.population = 500; // Colonization starting pop
+          newLogs.push(`🚀 ${newOwner} has colonized ${planet.name}!`);
+        }
+        
+        // Update all ships at this location to be orbiting this planet
+        shipsPresent.forEach(s => {
+          s.currentPlanetId = planet.id;
+        });
+      }
+    });
+
+    // 4. Economy Phase (Income generation)
+    nextPlanets.forEach(p => {
+      if (p.owner !== 'NEUTRAL') {
+        const income = (p.mines * 50) + (p.factories * 20) + 100;
+        nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
       }
     });
 
@@ -276,7 +251,6 @@ const App: React.FC = () => {
     .filter(p => !gameState.aiPlayers.includes(p));
   
   const humanReadyCount = gameState.readyPlayers.filter(p => humanPlayers.includes(p)).length;
-  const canStartTurn = humanReadyCount >= humanPlayers.length - 1;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
@@ -288,6 +262,13 @@ const App: React.FC = () => {
             title="Start New Mission"
           >
             🛰️
+          </button>
+          <button 
+            onClick={inviteAllies}
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors border border-cyan-500/30"
+            title="Recruit Allies (Link/QR)"
+          >
+            📢
           </button>
           <div className="flex flex-col">
             <span className="text-[10px] font-black tracking-[0.2em] text-cyan-400 uppercase leading-none mb-1">Stellar</span>
@@ -309,15 +290,11 @@ const App: React.FC = () => {
             <div className="text-xl font-bold text-amber-400">¤{currentCredits.toLocaleString()}</div>
           </div>
           <button 
-            onClick={() => setIsHostDashboardOpen(true)}
-            className="bg-slate-800 hover:bg-slate-700 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2"
+            onClick={processGlobalTurn}
+            disabled={isProcessing}
+            className="bg-cyan-600 hover:bg-cyan-500 px-6 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2 shadow-lg shadow-cyan-900/40 disabled:opacity-50"
           >
-             📡 <span className="hidden md:inline">Command Center</span>
-             {humanReadyCount > 0 && (
-               <span className="w-5 h-5 bg-cyan-500 text-slate-950 text-[10px] rounded-full flex items-center justify-center font-black animate-pulse">
-                 {humanReadyCount}
-               </span>
-             )}
+             {isProcessing ? '⚙️ Processing...' : '📡 Execute Orders'}
           </button>
         </div>
       </header>
