@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS } from './gameLogic';
@@ -25,22 +26,79 @@ const App: React.FC = () => {
     if (hash.startsWith('#join=')) {
       try {
         const dataStr = hash.substring(6);
-        const incomingState: GameState = JSON.parse(atob(dataStr));
-        // Hydrate default values for missing fields to ensure compatibility
-        incomingState.logs = [`🌌 Successfully joined Galaxy. Command initialized for Round ${incomingState.round}.`, `Welcome, Commander. Subspace relay established.`];
-        incomingState.readyPlayers = [];
-        setGameState(incomingState);
+        const compact = JSON.parse(atob(dataStr));
+        
+        // Reconstruct full state using the seed
+        const baseState = generateInitialState(compact.pc, compact.ai.length, compact.sd);
+        
+        // Apply deltas
+        baseState.round = compact.rd;
+        baseState.playerCredits = compact.cr;
+        baseState.activePlayer = compact.ap;
+        baseState.aiPlayers = compact.ai;
+        
+        // Sync planets
+        compact.ps.forEach((pState: any, i: number) => {
+          if (baseState.planets[i]) {
+            baseState.planets[i].owner = pState[0];
+            baseState.planets[i].mines = pState[1];
+            baseState.planets[i].factories = pState[2];
+          }
+        });
+
+        // Sync ships (replace initial fleet with shared fleet)
+        baseState.ships = compact.ss.map((s: any) => ({
+          id: s.id,
+          name: s.n,
+          type: s.t,
+          owner: s.o,
+          x: s.x,
+          y: s.y,
+          status: s.st,
+          targetPlanetId: s.tp,
+          currentPlanetId: s.cp,
+          cargo: s.cg || 0,
+          maxCargo: s.mc || 100,
+          hp: s.hp || 100,
+          maxHp: s.mhp || 100
+        }));
+
+        baseState.logs = [`🌌 Subspace sync complete. Galaxy Sector ${compact.sd} re-established.`, `Welcome to Round ${compact.rd}, Commander.`];
+        
+        setGameState(baseState);
         window.history.replaceState(null, "", window.location.pathname);
       } catch (e) {
         console.error("Failed to join via link", e);
+        alert("Subspace relay corrupted. The invitation link might be outdated.");
       }
     }
   }, []);
 
-  // Scrub state of heavy/transient data for cleaner sharing
+  // Highly compressed sharing format
   const getShareableData = (state: GameState) => {
-    const { logs, readyPlayers, ...scrubbed } = state;
-    return btoa(JSON.stringify(scrubbed));
+    const compact = {
+      sd: state.seed,
+      rd: state.round,
+      pc: state.playerCount,
+      ai: state.aiPlayers,
+      ap: state.activePlayer,
+      cr: state.playerCredits,
+      // Planet deltas: [owner, mines, factories]
+      ps: state.planets.map(p => [p.owner, p.mines, p.factories]),
+      // Ship states (minified keys)
+      ss: state.ships.map(s => ({
+        id: s.id,
+        n: s.name,
+        t: s.type,
+        o: s.owner,
+        x: Math.round(s.x),
+        y: Math.round(s.y),
+        st: s.status,
+        tp: s.targetPlanetId,
+        cp: s.currentPlanetId
+      }))
+    };
+    return btoa(JSON.stringify(compact));
   };
 
   const shareTurn = async () => {

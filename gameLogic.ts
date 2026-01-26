@@ -1,3 +1,4 @@
+
 import { Planet, Ship, GameState, Owner } from './types';
 
 export const GRID_SIZE = 1200;
@@ -25,7 +26,20 @@ export const PLAYER_COLORS: Record<Owner, string> = {
 export const SHIP_SPEEDS = { SCOUT: 120, FREIGHTER: 60, WARSHIP: 80 };
 export const SHIP_COSTS = { SCOUT: 200, FREIGHTER: 400, WARSHIP: 800 };
 
-export const generateInitialState = (playerCount: number = 2, aiCount: number = 0): GameState => {
+// Simple seeded random generator (Mulberry32)
+const seededRandom = (a: number) => {
+  return function() {
+    let t = a += 0x6D2B79F5;
+    t = Math.imul(t ^ t >>> 15, t | 1);
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61);
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  }
+}
+
+export const generateInitialState = (playerCount: number = 2, aiCount: number = 0, seed?: number): GameState => {
+  const actualSeed = seed ?? Math.floor(Math.random() * 1000000);
+  const rnd = seededRandom(actualSeed);
+
   const planets: Planet[] = PLANET_NAMES.slice(0, PLANET_COUNT).map((name, i) => {
     let owner: Owner = 'NEUTRAL';
     if (i < playerCount) {
@@ -35,8 +49,8 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
     return {
       id: `p-${i}`,
       name,
-      x: Math.random() * (GRID_SIZE - 200) + 100,
-      y: Math.random() * (GRID_SIZE - 200) + 100,
+      x: Math.floor(rnd() * (GRID_SIZE - 200) + 100),
+      y: Math.floor(rnd() * (GRID_SIZE - 200) + 100),
       owner,
       population: owner !== 'NEUTRAL' ? 1000 : 0,
       resources: 500,
@@ -49,8 +63,6 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
   const ships: Ship[] = [];
   const playerCredits: Record<string, number> = {};
   const aiPlayers: Owner[] = [];
-
-  // Human players are first, AI players are last
   const humanCount = playerCount - aiCount;
 
   for (let i = 1; i <= playerCount; i++) {
@@ -79,6 +91,7 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
   }
 
   return {
+    seed: actualSeed,
     round: 1,
     planets,
     ships,

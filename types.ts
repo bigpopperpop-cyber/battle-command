@@ -39,13 +39,14 @@ export interface PlayerOrders {
 }
 
 export interface GameState {
+  seed: number;
   round: number;
   planets: Planet[];
   ships: Ship[];
   playerCredits: Record<string, number>;
   logs: string[];
   playerCount: number;
-  aiPlayers: Owner[]; // IDs of players controlled by AI
+  aiPlayers: Owner[];
   isHost: boolean;
   activePlayer: Owner;
   readyPlayers: Owner[]; 
