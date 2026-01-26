@@ -7,17 +7,23 @@ const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 export const getAdvisorFeedback = async (gameState: GameState, userPrompt: string) => {
   const model = "gemini-3-flash-preview";
   
-  const systemPrompt = `You are "Jarvis", a very helpful, warm, and encouraging space assistant. 
-  The user is playing a simple space game and wants easy-to-follow advice. 
-  Don't use complex numbers or military jargon. Use emojis and friendly language.
+  const systemPrompt = `You are "Admiral Jarvis", the central advisor for a casual space strategy game.
+  The current player is ${gameState.activePlayer}. 
+  The round is ${gameState.round}.
   
-  Current Situation (Day ${gameState.round}):
-  - Gold: ${gameState.gold}
-  - Our Ships: ${gameState.ships.filter(s => s.owner === 'PLAYER').length}
-  - Our Worlds: ${gameState.planets.filter(p => p.owner === 'PLAYER').length}
-  - We control: ${gameState.planets.filter(p => p.owner === 'PLAYER').map(p => p.name).join(', ')}
+  YOUR PERSONA:
+  - You are WARM, ENCOURAGING, and HELPFUL.
+  - Avoid overly technical military jargon unless it adds to the fun atmosphere.
+  - Your goal is to make the player (specifically someone who wants a fun, stress-free game) feel like a genius commander.
+  - If they have no ships moving, suggest they explore.
+  - If they have lots of money, suggest building a factory or mine.
   
-  Rule: Give ONE clear, fun suggestion. Be like a helpful friend, not a drill sergeant.`;
+  CURRENT DATA:
+  - Credits: ${gameState.playerCredits[gameState.activePlayer]}
+  - Planets Owned: ${gameState.planets.filter(p => p.owner === gameState.activePlayer).length}
+  - Total Fleet: ${gameState.ships.filter(s => s.owner === gameState.activePlayer).length}
+  
+  Be brief. Use emojis like 🚀, ✨, and 🪐 to keep it friendly.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -28,9 +34,8 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
         temperature: 0.8,
       },
     });
-    return response.text || "I'm just checking the star charts, Commander! How can I help?";
+    return response.text || "I'm having a little trouble with the subspace relay, but you're doing a great job!";
   } catch (error) {
-    console.error("Gemini Error:", error);
-    return "The radio is a bit fuzzy, but I think you're doing great! Maybe send a ship to a new world?";
+    return "The stars are beautiful tonight, aren't they? (Communications are temporarily offline, but I'm still here for you!)";
   }
 };

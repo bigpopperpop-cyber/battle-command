@@ -1,5 +1,5 @@
 
-export type Owner = 'PLAYER' | 'ENEMY_A' | 'ENEMY_B' | 'NEUTRAL';
+export type Owner = 'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6' | 'P7' | 'P8' | 'NEUTRAL';
 
 export interface Planet {
   id: string;
@@ -8,8 +8,9 @@ export interface Planet {
   y: number;
   owner: Owner;
   population: number;
-  goldIncome: number;
-  supplies: number;
+  resources: number; 
+  factories: number;
+  mines: number;
   defense: number;
 }
 
@@ -31,12 +32,22 @@ export interface Ship {
   status: 'IDLE' | 'MOVING' | 'ORBITING';
 }
 
+export interface PlayerOrders {
+  playerId: Owner;
+  shipOrders: { shipId: string; targetPlanetId: string }[];
+  planetOrders: { planetId: string; builds: ('MINE' | 'FACTORY')[] }[];
+}
+
 export interface GameState {
   round: number;
   planets: Planet[];
   ships: Ship[];
-  gold: number;
+  playerCredits: Record<string, number>;
   logs: string[];
+  playerCount: number;
+  isHost: boolean;
+  activePlayer: Owner;
+  readyPlayers: Owner[]; // Track who has submitted moves to the host
 }
 
 export interface AdvisorMessage {

@@ -1,41 +1,72 @@
 
 import React, { useState, useEffect } from 'react';
-import { GameState } from './types';
-import { generateInitialState, SHIP_SPEEDS } from './gameLogic';
+import { GameState, Planet, Ship, Owner } from './types';
+import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal from './components/HelpModal';
-import LandingPage from './components/LandingPage';
 
 const App: React.FC = () => {
-  const [isStarted, setIsStarted] = useState(false);
-  const [gameState, setGameState] = useState<GameState>(generateInitialState());
+  const [gameState, setGameState] = useState<GameState>(() => generateInitialState(4));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<'PLANET' | 'SHIP' | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
 
-  const handleSelect = (id: string, type: 'PLANET' | 'SHIP') => {
-    setSelectedId(id);
-    setSelectedType(type);
+  // 1. NATIVE SHARING (The "Easy" Way)
+  const shareTurn = async () => {
+    const data = btoa(JSON.stringify(gameState));
+    const shareText = `Commander! Here are the fleet orders for ${gameState.activePlayer} (Round ${gameState.round}):\n\nCOMMAND_DATA:${data}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Stellar Commander Orders', text: shareText });
+      } catch (err) {
+        copyToClipboard(data);
+      }
+    } else {
+      copyToClipboard(data);
+    }
   };
 
-  const processTurn = () => {
-    setGameState(prev => {
-      const nextPlanets = [...prev.planets];
-      const nextShips = [...prev.ships];
-      const newLogs = [`Day ${prev.round} over!`];
-      let newGold = prev.gold;
+  const copyToClipboard = (data: string) => {
+    navigator.clipboard.writeText(data);
+    alert("Orders copied to clipboard! Paste them into your chat with the Host.");
+  };
 
-      // 1. Economic phase
+  // 2. CLIPBOARD SYNC (The Host's best friend)
+  const syncFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const match = text.match(/COMMAND_DATA:(.*)/) || [null, text];
+      const dataStr = match[1]?.trim();
+      
+      if (!dataStr) throw new Error();
+      
+      const decoded = JSON.parse(atob(dataStr));
+      if (decoded.round && decoded.planets) {
+        setGameState(decoded);
+        alert("✅ Sector Data Synchronized!");
+      }
+    } catch (e) {
+      alert("❌ No valid command data found in your clipboard. Make sure you copied the friend's message first!");
+    }
+  };
+
+  const processGlobalTurn = () => {
+    setGameState(prev => {
+      const nextPlanets = prev.planets.map(p => ({...p}));
+      const nextShips = prev.ships.map(s => ({...s}));
+      const newCredits = { ...prev.playerCredits };
+      const newLogs = [`--- Turn ${prev.round} Results ---`];
+
       nextPlanets.forEach(p => {
-        if (p.owner === 'PLAYER') {
-          const income = (p.goldIncome * 50) + (p.supplies * 20);
-          newGold += income;
+        if (p.owner !== 'NEUTRAL') {
+          const income = (p.mines * 50) + (p.factories * 20) + 100;
+          newCredits[p.owner] = (newCredits[p.owner] || 0) + income;
         }
       });
 
-      // 2. Movement phase
       nextShips.forEach(s => {
         if (s.status === 'MOVING' && s.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === s.targetPlanetId);
@@ -50,12 +81,9 @@ const App: React.FC = () => {
               s.y = target.y;
               s.status = 'ORBITING';
               s.currentPlanetId = target.id;
-              if (s.owner === 'PLAYER') {
-                newLogs.push(`${s.name} arrived at ${target.name}!`);
-                if (target.owner === 'NEUTRAL') {
-                  target.owner = 'PLAYER';
-                  newLogs.push(`We claimed ${target.name}! 🎉`);
-                }
+              if (target.owner === 'NEUTRAL') {
+                target.owner = s.owner;
+                newLogs.push(`🚀 ${s.owner} has colonized ${target.name}!`);
               }
             } else {
               s.x += (dx / dist) * speed;
@@ -70,208 +98,174 @@ const App: React.FC = () => {
         round: prev.round + 1,
         planets: nextPlanets,
         ships: nextShips,
-        gold: newGold,
-        logs: [...prev.logs, ...newLogs].slice(-10)
+        playerCredits: newCredits,
+        logs: [...prev.logs, ...newLogs].slice(-10),
+        readyPlayers: [] // Reset for next turn
       };
     });
   };
 
-  const selectedPlanet = selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null;
-  const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
-
-  const orderMovement = (planetId: string) => {
-    if (selectedShip && selectedShip.owner === 'PLAYER') {
+  const buildAction = (type: 'MINE' | 'FACTORY') => {
+    const planet = gameState.planets.find(p => p.id === selectedId);
+    const cost = 100;
+    if (planet && gameState.playerCredits[gameState.activePlayer] >= cost) {
       setGameState(prev => ({
         ...prev,
-        ships: prev.ships.map(s => s.id === selectedShip.id ? {
-          ...s,
-          status: 'MOVING',
-          targetPlanetId: planetId,
-          currentPlanetId: undefined
-        } : s)
-      }));
-      setSelectedId(null);
-      setSelectedType(null);
-    }
-  };
-
-  const upgradeWorld = (type: 'GOLD' | 'SUPPLY') => {
-    if (selectedPlanet && selectedPlanet.owner === 'PLAYER' && gameState.gold >= 100) {
-      setGameState(prev => ({
-        ...prev,
-        gold: prev.gold - 100,
-        planets: prev.planets.map(p => p.id === selectedPlanet.id ? {
+        playerCredits: { ...prev.playerCredits, [prev.activePlayer]: prev.playerCredits[prev.activePlayer] - cost },
+        planets: prev.planets.map(p => p.id === planet.id ? {
           ...p,
-          goldIncome: type === 'GOLD' ? p.goldIncome + 1 : p.goldIncome,
-          supplies: type === 'SUPPLY' ? p.supplies + 1 : p.supplies
+          mines: type === 'MINE' ? p.mines + 1 : p.mines,
+          factories: type === 'FACTORY' ? p.factories + 1 : p.factories
         } : p)
       }));
     }
   };
 
-  return (
-    <div className="fixed inset-0 flex flex-col bg-slate-950 text-slate-100 overflow-hidden select-none">
-      {!isStarted && <LandingPage onStart={() => setIsStarted(true)} />}
+  const setDestination = (planetId: string) => {
+    setGameState(prev => ({
+      ...prev,
+      ships: prev.ships.map(s => s.id === selectedId ? {
+        ...s,
+        status: 'MOVING',
+        targetPlanetId: planetId,
+        currentPlanetId: undefined
+      } : s)
+    }));
+    setSelectedId(null);
+  };
 
-      {/* Top Header */}
-      <header className="h-16 flex items-center justify-between px-6 glass-card border-b-0 z-10">
+  const selectedPlanet = selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null;
+  const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
+
+  return (
+    <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
+      {/* Friendly HUD */}
+      <header className="h-20 flex items-center justify-between px-6 glass-card border-b-white/5 z-20">
         <div className="flex items-center gap-4">
-          <div className="text-cyan-400 font-black tracking-tighter text-xl italic">STELLAR CMD</div>
-          <div className="h-6 w-px bg-white/10" />
           <div className="flex flex-col">
-            <span className="text-[10px] text-slate-500 uppercase font-bold">Day</span>
-            <span className="text-lg font-bold leading-none">{gameState.round}</span>
+            <span className="text-[10px] font-black tracking-[0.2em] text-cyan-400 uppercase leading-none mb-1">Stellar</span>
+            <span className="text-xl font-bold tracking-tight italic">COMMANDER</span>
+          </div>
+          <div className="h-8 w-px bg-white/10" />
+          <div className={`px-4 py-1 rounded-full text-xs font-bold border-2 flex items-center gap-2`} 
+               style={{ borderColor: PLAYER_COLORS[gameState.activePlayer], color: PLAYER_COLORS[gameState.activePlayer] }}>
+            <span className="w-2 h-2 rounded-full animate-pulse" style={{ backgroundColor: PLAYER_COLORS[gameState.activePlayer] }} />
+            {gameState.activePlayer}'S TURN
           </div>
         </div>
-        
-        <div className="flex items-center gap-4 md:gap-6">
-          <div className="flex flex-col items-end">
-            <span className="text-[10px] text-slate-500 uppercase font-bold">My Gold</span>
-            <span className="text-lg font-bold text-amber-400 leading-none">💰 {gameState.gold.toLocaleString()}</span>
+
+        <div className="flex items-center gap-6">
+          <div className="text-right">
+            <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Bank</div>
+            <div className="text-xl font-bold text-amber-400">¤{gameState.playerCredits[gameState.activePlayer]?.toLocaleString()}</div>
           </div>
-          <button 
-            onClick={processTurn}
-            className="bg-cyan-600 hover:bg-cyan-500 active:scale-95 transition-all text-white px-6 py-2 rounded-xl font-bold shadow-lg shadow-cyan-900/20 uppercase text-xs tracking-widest"
-          >
-            Next Day
+          <button onClick={processGlobalTurn} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2.5 rounded-2xl font-bold shadow-lg shadow-emerald-900/40 transition-all active:scale-95">
+             🚀 PROCESS GALAXY
           </button>
         </div>
       </header>
 
-      {/* Main Map View */}
+      {/* Map Content */}
       <main className="flex-1 relative">
         <MapView 
           planets={gameState.planets}
           ships={gameState.ships}
           selectedId={selectedId}
-          onSelect={handleSelect}
+          onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }}
         />
 
-        {/* Selected Planet Overlay */}
+        {/* Simplifed Context Menu */}
         {selectedPlanet && (
-          <div className="absolute top-6 left-6 w-72 glass-card rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-300">
+          <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300">
              <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-2xl font-bold">{selectedPlanet.name}</h2>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full uppercase font-bold ${selectedPlanet.owner === 'PLAYER' ? 'bg-cyan-500' : 'bg-slate-600'}`}>
-                  {selectedPlanet.owner === 'PLAYER' ? 'My World' : 'Empty Space'}
-                </span>
-              </div>
-              <button onClick={() => setSelectedId(null)} className="text-slate-400 hover:text-white text-xl">✕</button>
-            </div>
-            
-            {selectedPlanet.owner === 'PLAYER' && (
-              <div className="space-y-3">
-                <div className="flex gap-2">
-                   <div className="flex-1 bg-slate-900/50 p-3 rounded-2xl">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold">Mines</p>
-                    <p className="text-xl font-bold">⛏️ {selectedPlanet.goldIncome}</p>
-                  </div>
-                  <div className="flex-1 bg-slate-900/50 p-3 rounded-2xl">
-                    <p className="text-[10px] text-slate-500 uppercase font-bold">Supplies</p>
-                    <p className="text-xl font-bold">📦 {selectedPlanet.supplies}</p>
-                  </div>
+                <div>
+                  <h2 className="text-2xl font-bold">{selectedPlanet.name}</h2>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sector {selectedPlanet.id}</span>
                 </div>
-                <button 
-                  onClick={() => upgradeWorld('GOLD')}
-                  className="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-2xl text-sm font-bold transition-all border border-white/5 flex justify-between px-4 items-center"
-                >
-                  <span>Build Gold Mine</span>
-                  <span className="text-amber-400">💰 100</span>
-                </button>
-                <button 
-                  onClick={() => upgradeWorld('SUPPLY')}
-                  className="w-full bg-slate-800 hover:bg-slate-700 py-3 rounded-2xl text-sm font-bold transition-all border border-white/5 flex justify-between px-4 items-center"
-                >
-                  <span>Add Supplies</span>
-                  <span className="text-amber-400">💰 100</span>
-                </button>
-              </div>
-            )}
+                <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white">✕</button>
+             </div>
 
-            {selectedShip && selectedShip.owner === 'PLAYER' && selectedShip.currentPlanetId !== selectedPlanet.id && (
-              <button 
-                onClick={() => orderMovement(selectedPlanet.id)}
-                className="w-full mt-4 bg-cyan-600 hover:bg-cyan-500 py-4 rounded-2xl font-bold text-base shadow-xl shadow-cyan-500/20"
-              >
-                Go Here 🚀
-              </button>
-            )}
+             {selectedPlanet.owner === gameState.activePlayer ? (
+               <div className="grid grid-cols-2 gap-3 mb-6">
+                  <button onClick={() => buildAction('MINE')} className="flex flex-col items-center justify-center p-4 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors">
+                    <span className="text-2xl mb-1">🏗️</span>
+                    <span className="text-[10px] font-bold uppercase">Build Mine</span>
+                    <span className="text-[10px] text-amber-400">¤100</span>
+                  </button>
+                  <button onClick={() => buildAction('FACTORY')} className="flex flex-col items-center justify-center p-4 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors">
+                    <span className="text-2xl mb-1">🏭</span>
+                    <span className="text-[10px] font-bold uppercase">Factory</span>
+                    <span className="text-[10px] text-amber-400">¤100</span>
+                  </button>
+               </div>
+             ) : (
+               <div className="bg-slate-900/50 p-4 rounded-2xl mb-6 text-center">
+                  <p className="text-xs text-slate-400 italic">This planet is controlled by {selectedPlanet.owner}.</p>
+               </div>
+             )}
+
+             {selectedShip && selectedShip.owner === gameState.activePlayer && selectedShip.currentPlanetId !== selectedPlanet.id && (
+                <button onClick={() => setDestination(selectedPlanet.id)} className="w-full py-4 bg-cyan-600 rounded-2xl font-bold text-sm shadow-xl shadow-cyan-900/30 active:scale-95 transition-all">
+                  🚀 SEND FLEET HERE
+                </button>
+             )}
           </div>
         )}
 
-        {/* Selected Ship Overlay */}
-        {selectedShip && selectedType === 'SHIP' && (
-          <div className="absolute top-6 left-6 w-72 glass-card rounded-3xl p-6 shadow-2xl animate-in fade-in zoom-in duration-300">
-            <div className="flex justify-between items-start mb-4">
-              <div>
-                <h2 className="text-2xl font-bold">{selectedShip.name}</h2>
-                <span className="text-[10px] px-3 py-1 rounded-full bg-amber-500 text-black uppercase font-bold">
-                  {selectedShip.type === 'SCOUT' ? 'Explorer Ship' : 'Cargo Ship'}
-                </span>
-              </div>
-              <button onClick={() => setSelectedId(null)} className="text-slate-400 hover:text-white text-xl">✕</button>
-            </div>
-
-            <div className="space-y-4">
-              <div className="bg-slate-900/50 p-4 rounded-2xl border border-white/5">
-                <p className="text-[10px] text-slate-500 uppercase font-bold mb-1">Current Task</p>
-                <p className="text-base font-bold flex items-center gap-2">
-                  <span className={`w-3 h-3 rounded-full ${selectedShip.status === 'MOVING' ? 'bg-amber-400 animate-pulse' : 'bg-green-400'}`} />
-                  {selectedShip.status === 'MOVING' ? 'Traveling...' : 'Waiting for Orders'}
-                </p>
-              </div>
-            </div>
-
-            <p className="mt-6 text-[11px] text-cyan-400 font-bold text-center italic bg-cyan-500/10 py-2 rounded-xl">
-              Tap a star on the map to set a new goal!
-            </p>
-          </div>
-        )}
+        {/* Sync Controls */}
+        <div className="absolute top-6 right-6 flex flex-col gap-3">
+           <button onClick={shareTurn} className="glass-card px-6 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest text-cyan-400 hover:bg-cyan-400/10 flex items-center gap-2">
+             📤 Send Moves to Host
+           </button>
+           <button onClick={syncFromClipboard} className="glass-card px-6 py-3 rounded-2xl text-xs font-bold uppercase tracking-widest text-emerald-400 hover:bg-emerald-400/10 flex items-center gap-2">
+             📥 Sync Friend's Move
+           </button>
+        </div>
 
         {/* Logs */}
-        <div className="absolute bottom-6 left-6 w-80 h-32 glass-card rounded-3xl p-4 opacity-90 flex flex-col pointer-events-none">
-          <div className="text-[10px] text-cyan-400 font-bold uppercase mb-2 tracking-widest">Notifications</div>
-          <div className="flex-1 overflow-y-auto space-y-2 text-[12px]">
-            {gameState.logs.map((log, i) => (
-              <div key={i} className="text-slate-300 flex gap-2">
-                <span className="text-cyan-500">•</span>
-                {log}
-              </div>
-            ))}
+        <div className="absolute bottom-6 left-6 w-80 glass-card rounded-2xl p-4 bg-[#050b1a]/80">
+          <h4 className="text-[10px] font-bold uppercase text-cyan-400 mb-2 flex items-center gap-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> Subspace Logs
+          </h4>
+          <div className="h-24 overflow-y-auto space-y-2 pr-2 text-xs text-slate-300">
+            {gameState.logs.map((log, i) => <div key={i} className="pb-2 border-b border-white/5 last:border-0">{log}</div>)}
           </div>
         </div>
       </main>
 
-      {/* Simplified Navigation */}
-      <nav className="h-24 glass-card border-t border-white/10 flex items-center justify-center px-4 gap-4 md:gap-12 z-20">
-        <NavButton active={true} onClick={() => {}} icon="🔭" label="View Galaxy" />
-        <NavButton active={false} onClick={() => setIsHelpOpen(true)} icon="📖" label="How to Play" />
-        <div className="h-12 w-px bg-white/10 mx-2" />
-        <button 
-          onClick={() => setIsAdvisorOpen(!isAdvisorOpen)}
-          className={`flex flex-col items-center justify-center min-w-[80px] h-16 transition-all rounded-2xl p-2 ${isAdvisorOpen ? 'bg-cyan-500 text-white' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-        >
-          <span className="text-2xl mb-1">🤖</span>
-          <span className="text-[10px] font-bold uppercase tracking-tight">Ask Jarvis</span>
-        </button>
-      </nav>
+      {/* Simple Player Switching */}
+      <footer className="h-24 glass-card border-t-white/5 flex items-center justify-between px-10">
+        <div className="flex gap-3">
+          {Array.from({length: gameState.playerCount}).map((_, i) => {
+            const pId = `P${i+1}` as Owner;
+            return (
+              <button 
+                key={i}
+                onClick={() => setGameState(p => ({...p, activePlayer: pId}))}
+                className={`w-12 h-12 rounded-2xl font-bold text-sm transition-all flex flex-col items-center justify-center border-2 ${gameState.activePlayer === pId ? 'scale-110 shadow-xl' : 'opacity-40'}`}
+                style={{ 
+                  borderColor: PLAYER_COLORS[pId],
+                  backgroundColor: gameState.activePlayer === pId ? `${PLAYER_COLORS[pId]}22` : 'transparent',
+                  color: PLAYER_COLORS[pId]
+                }}
+              >
+                {pId}
+              </button>
+            );
+          })}
+        </div>
 
-      {/* Overlays */}
-      <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} />
-      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+        <button 
+          onClick={() => setIsAdvisorOpen(true)}
+          className="w-16 h-16 bg-cyan-500 rounded-full flex items-center justify-center text-3xl shadow-2xl shadow-cyan-500/30 hover:scale-110 transition-transform active:rotate-12"
+        >
+          ❂
+        </button>
+      </footer>
+
+      <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
     </div>
   );
 };
-
-const NavButton = ({ active, onClick, icon, label }: { active: boolean, onClick: () => void, icon: string, label: string }) => (
-  <button 
-    onClick={onClick}
-    className={`flex flex-col items-center justify-center min-w-[80px] h-16 rounded-2xl transition-all ${active ? 'bg-white/10 text-white' : 'text-slate-500 hover:text-slate-200'}`}
-  >
-    <span className="text-2xl mb-0.5">{icon}</span>
-    <span className="text-[10px] font-bold uppercase tracking-tight">{label}</span>
-  </button>
-);
 
 export default App;
