@@ -94,8 +94,12 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
       }
     });
 
-    const jsonText = response.text || '{}';
-    return JSON.parse(jsonText);
+    const jsonText = response.text;
+    if (!jsonText) return { shipOrders: [], planetOrders: [] };
+    
+    // Robust cleaning in case model includes markdown markers
+    const cleaned = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+    return JSON.parse(cleaned);
   } catch (error) {
     console.error("AI Decision Error:", error);
     return { shipOrders: [], planetOrders: [] };
