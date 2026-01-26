@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { Planet, Ship } from '../types';
 import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
 
@@ -14,59 +14,38 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   const [zoom, setZoom] = useState(0.7);
   const [offset, setOffset] = useState({ x: 50, y: 50 });
   const [isDragging, setIsDragging] = useState(false);
-  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
-  const [hasMoved, setHasMoved] = useState(false);
+  const dragStartRef = useRef({ x: 0, y: 0 });
+  const hasMovedRef = useRef(false);
 
-  const startDragging = useCallback((clientX: number, clientY: number) => {
+  const handleStart = (clientX: number, clientY: number) => {
     setIsDragging(true);
-    setHasMoved(false);
-    setDragStart({ x: clientX - offset.x, y: clientY - offset.y });
-  }, [offset.x, offset.y]);
+    hasMovedRef.current = false;
+    dragStartRef.current = { x: clientX - offset.x, y: clientY - offset.y };
+  };
 
-  const moveDragging = useCallback((clientX: number, clientY: number) => {
+  const handleMove = (clientX: number, clientY: number) => {
     if (!isDragging) return;
-    const dx = Math.abs(clientX - (dragStart.x + offset.x));
-    const dy = Math.abs(clientY - (dragStart.y + offset.y));
     
-    // Threshold to distinguish between accidental movement and intentional drag
-    if (dx > 2 || dy > 2) {
-      setHasMoved(true);
+    const newX = clientX - dragStartRef.current.x;
+    const newY = clientY - dragStartRef.current.y;
+    
+    const dx = Math.abs(newX - offset.x);
+    const dy = Math.abs(newY - offset.y);
+    
+    if (dx > 3 || dy > 3) {
+      hasMovedRef.current = true;
     }
     
-    setOffset({ x: clientX - dragStart.x, y: clientY - dragStart.y });
-  }, [isDragging, dragStart, offset.x, offset.y]);
+    setOffset({ x: newX, y: newY });
+  };
 
-  const stopDragging = useCallback(() => {
+  const handleEnd = () => {
     setIsDragging(false);
-  }, []);
-
-  // Mouse Handlers
-  const handleMouseDown = (e: React.MouseEvent) => {
-    startDragging(e.clientX, e.clientY);
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    moveDragging(e.clientX, e.clientY);
-  };
-
-  // Touch Handlers
-  const handleTouchStart = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    if (touch) {
-      startDragging(touch.clientX, touch.clientY);
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    const touch = e.touches[0];
-    if (touch) {
-      moveDragging(touch.clientX, touch.clientY);
-    }
-  };
-
-  const handleSelect = (e: React.MouseEvent | React.TouchEvent, id: string, type: 'PLANET' | 'SHIP') => {
-    // Only select if the user didn't move the map significantly
-    if (!hasMoved) {
+  // Select logic that ignores "clicks" that were actually drags
+  const handleItemClick = (e: React.MouseEvent | React.TouchEvent, id: string, type: 'PLANET' | 'SHIP') => {
+    if (!hasMovedRef.current) {
       e.stopPropagation();
       onSelect(id, type);
     }
@@ -75,13 +54,19 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   return (
     <div 
       className="w-full h-full relative overflow-hidden bg-[#020617] cursor-grab active:cursor-grabbing touch-none select-none"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={stopDragging}
-      onMouseLeave={stopDragging}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={stopDragging}
+      onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
+      onMouseMove={(e) => handleMove(e.clientX, e.clientY)}
+      onMouseUp={handleEnd}
+      onMouseLeave={handleEnd}
+      onTouchStart={(e) => {
+        const touch = e.touches[0];
+        handleStart(touch.clientX, touch.clientY);
+      }}
+      onTouchMove={(e) => {
+        const touch = e.touches[0];
+        handleMove(touch.clientX, touch.clientY);
+      }}
+      onTouchEnd={handleEnd}
     >
       <div 
         className="absolute will-change-transform"
@@ -92,7 +77,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           height: `${GRID_SIZE}px`,
         }}
       >
-        {/* Grid lines */}
         <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
           backgroundSize: '100px 100px'
@@ -102,7 +86,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           <div
             key={planet.id}
             onMouseDown={(e) => e.stopPropagation()} 
-            onClick={(e) => handleSelect(e, planet.id, 'PLANET')}
+            onClick={(e) => handleItemClick(e, planet.id, 'PLANET')}
             className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group"
             style={{ left: planet.x, top: planet.y }}
           >
@@ -124,7 +108,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           <div
             key={ship.id}
             onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => handleSelect(e, ship.id, 'SHIP')}
+            onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
             className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-500"
             style={{ left: ship.x, top: ship.y }}
           >
@@ -139,7 +123,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
         ))}
       </div>
 
-      {/* Zoom Controls Overlay */}
       <div className="absolute bottom-6 left-6 flex flex-col gap-3 z-30">
         <button 
           onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(3, z + 0.2)); }} 
