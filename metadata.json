@@ -1,0 +1,8 @@
+{
+  "name": "Stellar Commander",
+  "description": "A user-friendly space strategy game inspired by VGA Planets, featuring a conversational AI Admiral to help non-technical players manage their galactic empire.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
