@@ -5,6 +5,7 @@ import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal from './components/HelpModal';
+import NewGameModal from './components/NewGameModal';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => generateInitialState(8));
@@ -13,9 +14,27 @@ const App: React.FC = () => {
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isHostDashboardOpen, setIsHostDashboardOpen] = useState(false);
-  const [setupPlayerCount, setSetupPlayerCount] = useState(8);
+  const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
 
-  // 1. SMART SHARE (Player Side)
+  // Auto-load galaxy if joined via link
+  useEffect(() => {
+    const hash = window.location.hash;
+    if (hash.startsWith('#join=')) {
+      try {
+        const dataStr = hash.substring(6);
+        const incomingState: GameState = JSON.parse(atob(dataStr));
+        // Reset logs to show join message
+        incomingState.logs = [`🌌 Successfully joined Galaxy. Command initialized for Round ${incomingState.round}.`, ...incomingState.logs].slice(0, 15);
+        setGameState(incomingState);
+        // Clean the URL so refreshing doesn't reset state
+        window.history.replaceState(null, "", window.location.pathname);
+      } catch (e) {
+        console.error("Failed to join via link", e);
+      }
+    }
+  }, []);
+
+  // 1. SMART SHARE (Player Side - Send Moves)
   const shareTurn = async () => {
     const data = btoa(JSON.stringify(gameState));
     const shareText = `COMMAND_DATA:${data}`;
@@ -27,19 +46,39 @@ const App: React.FC = () => {
           text: `Here are my moves for Round ${gameState.round}!\n\n${shareText}` 
         });
       } catch (err) {
-        copyToClipboard(data);
+        copyToClipboard(shareText, "Orders copied! Send the message to your Host.");
       }
     } else {
-      copyToClipboard(data);
+      copyToClipboard(shareText, "Orders copied! Send the message to your Host.");
     }
   };
 
-  const copyToClipboard = (data: string) => {
-    navigator.clipboard.writeText(`COMMAND_DATA:${data}`);
-    alert("Orders copied! Send the message to your Host.");
+  // 2. INVITE ALLIES (Host Side - Send Map Link)
+  const inviteAllies = async () => {
+    const data = btoa(JSON.stringify(gameState));
+    const joinUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
+    
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: 'Join my Galaxy in Stellar Commander',
+          text: `I'm hosting a galaxy for ${gameState.playerCount} players. Tap the link to join the mission!`,
+          url: joinUrl
+        });
+      } catch (err) {
+        copyToClipboard(joinUrl, "Mission Link copied! Send it to your friends to let them join.");
+      }
+    } else {
+      copyToClipboard(joinUrl, "Mission Link copied! Send it to your friends to let them join.");
+    }
   };
 
-  // 2. SMART MERGE (Host Side)
+  const copyToClipboard = (text: string, alertMsg: string) => {
+    navigator.clipboard.writeText(text);
+    alert(alertMsg);
+  };
+
+  // 3. SMART MERGE (Host Side)
   const syncFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -141,11 +180,11 @@ const App: React.FC = () => {
     setIsHostDashboardOpen(false);
   };
 
-  const reinitializeGame = () => {
-    if (window.confirm(`Are you sure? This will reset the galaxy for ${setupPlayerCount} players.`)) {
-      setGameState(generateInitialState(setupPlayerCount));
-      setIsHostDashboardOpen(false);
-    }
+  const handleStartNewGame = (count: number) => {
+    setGameState(generateInitialState(count));
+    setIsNewGameModalOpen(false);
+    setIsHostDashboardOpen(false);
+    setSelectedId(null);
   };
 
   const buildAction = (type: 'MINE' | 'FACTORY') => {
@@ -185,9 +224,16 @@ const App: React.FC = () => {
       {/* HUD */}
       <header className="h-20 flex items-center justify-between px-6 glass-card border-b-white/5 z-20">
         <div className="flex items-center gap-4">
+          <button 
+            onClick={() => setIsNewGameModalOpen(true)}
+            className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 transition-colors"
+            title="Start New Mission"
+          >
+            🛰️
+          </button>
           <div className="flex flex-col">
             <span className="text-[10px] font-black tracking-[0.2em] text-cyan-400 uppercase leading-none mb-1">Stellar</span>
-            <span className="text-xl font-bold tracking-tight italic">COMMANDER</span>
+            <span className="text-xl font-bold tracking-tight italic leading-none">COMMANDER</span>
           </div>
           <div className="h-8 w-px bg-white/10 mx-2" />
           <div className="flex items-center gap-4">
@@ -200,7 +246,7 @@ const App: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="text-right">
+          <div className="text-right hidden sm:block">
             <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Bank</div>
             <div className="text-xl font-bold text-amber-400">¤{gameState.playerCredits[gameState.activePlayer]?.toLocaleString()}</div>
           </div>
@@ -208,7 +254,7 @@ const App: React.FC = () => {
             onClick={() => setIsHostDashboardOpen(true)}
             className="bg-slate-800 hover:bg-slate-700 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2"
           >
-             📡 Command Center
+             📡 <span className="hidden md:inline">Command Center</span>
              {gameState.readyPlayers.length > 0 && (
                <span className="w-5 h-5 bg-cyan-500 text-slate-950 text-[10px] rounded-full flex items-center justify-center font-black animate-pulse">
                  {gameState.readyPlayers.length}
@@ -264,8 +310,8 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Logs */}
-        <div className="absolute bottom-6 left-6 w-80 glass-card rounded-2xl p-4 bg-[#050b1a]/80">
+        {/* Floating Logs */}
+        <div className="absolute bottom-6 left-6 w-80 glass-card rounded-2xl p-4 bg-[#050b1a]/80 hidden md:block">
           <h4 className="text-[10px] font-bold uppercase text-cyan-400 mb-2 flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> Subspace Feed
           </h4>
@@ -291,21 +337,22 @@ const App: React.FC = () => {
                <button onClick={() => setIsHostDashboardOpen(false)} className="text-slate-500 text-xl">✕</button>
             </div>
 
-            {/* New Mission / Player Count Selector */}
             <div className="mb-8 p-5 bg-cyan-950/20 border border-cyan-500/20 rounded-3xl">
-               <h3 className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest mb-3">Sector Setup</h3>
-               <div className="flex items-center justify-between mb-4">
-                 <span className="text-sm font-bold">Player Count: {setupPlayerCount}</span>
-                 <input 
-                    type="range" min="2" max="8" step="1" 
-                    value={setupPlayerCount} 
-                    onChange={(e) => setSetupPlayerCount(parseInt(e.target.value))}
-                    className="accent-cyan-500"
-                 />
+               <h3 className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest mb-3 text-center">Galaxy Management</h3>
+               <div className="flex gap-2">
+                 <button 
+                    onClick={inviteAllies} 
+                    className="flex-1 py-3 bg-cyan-600/10 hover:bg-cyan-600/20 text-cyan-400 border border-cyan-600/30 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
+                 >
+                   🤝 Invite Allies
+                 </button>
+                 <button 
+                    onClick={() => setIsNewGameModalOpen(true)} 
+                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest"
+                 >
+                   Reset Mission
+                 </button>
                </div>
-               <button onClick={reinitializeGame} className="w-full py-3 bg-cyan-600/10 hover:bg-cyan-600/20 text-cyan-400 border border-cyan-600/30 rounded-xl text-[10px] font-black uppercase tracking-widest">
-                 Re-initialize Galaxy
-               </button>
             </div>
 
             <div className="flex-1 space-y-2 mb-8">
@@ -387,6 +434,11 @@ const App: React.FC = () => {
 
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+      <NewGameModal 
+        isOpen={isNewGameModalOpen} 
+        onClose={() => setIsNewGameModalOpen(false)} 
+        onConfirm={handleStartNewGame} 
+      />
     </div>
   );
 };
