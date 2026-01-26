@@ -45,9 +45,10 @@ export interface GameState {
   playerCredits: Record<string, number>;
   logs: string[];
   playerCount: number;
+  aiPlayers: Owner[]; // IDs of players controlled by AI
   isHost: boolean;
   activePlayer: Owner;
-  readyPlayers: Owner[]; // Track who has submitted moves to the host
+  readyPlayers: Owner[]; 
 }
 
 export interface AdvisorMessage {

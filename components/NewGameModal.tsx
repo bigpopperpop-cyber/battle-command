@@ -6,11 +6,16 @@ import { Owner } from '../types';
 interface NewGameModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (count: number) => void;
+  onConfirm: (playerCount: number, aiCount: number) => void;
 }
 
 const NewGameModal: React.FC<NewGameModalProps> = ({ isOpen, onClose, onConfirm }) => {
   const [selectedCount, setSelectedCount] = React.useState(2);
+  const [aiCount, setAiCount] = React.useState(0);
+
+  // Ensure AI count doesn't exceed total players - 1 (need at least 1 human)
+  const maxAi = selectedCount - 1;
+  const effectiveAiCount = Math.min(aiCount, maxAi);
 
   if (!isOpen) return null;
 
@@ -24,38 +29,68 @@ const NewGameModal: React.FC<NewGameModalProps> = ({ isOpen, onClose, onConfirm 
           <p className="text-xs text-cyan-400 font-black uppercase tracking-[0.3em]">Configure Mission Parameters</p>
         </div>
 
-        <div className="mb-10">
-          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 block text-center">Select Number of Commanders</label>
-          <div className="grid grid-cols-4 md:grid-cols-7 gap-3">
-            {[2, 3, 4, 5, 6, 7, 8].map((count) => (
-              <button
-                key={count}
-                onClick={() => setSelectedCount(count)}
-                className={`aspect-square rounded-2xl flex flex-col items-center justify-center transition-all border-2 ${
-                  selectedCount === count 
-                    ? 'bg-cyan-500/20 border-cyan-500 scale-110 shadow-lg shadow-cyan-500/20' 
-                    : 'bg-slate-900/50 border-white/5 hover:border-white/20'
-                }`}
-              >
-                <span className={`text-xl font-bold ${selectedCount === count ? 'text-white' : 'text-slate-500'}`}>{count}</span>
-                <div className="flex gap-0.5 mt-1">
-                  {Array.from({length: count}).map((_, i) => (
-                    <div 
-                      key={i} 
-                      className="w-1 h-1 rounded-full" 
-                      style={{ backgroundColor: PLAYER_COLORS[`P${i+1}` as Owner] }} 
-                    />
-                  ))}
-                </div>
-              </button>
-            ))}
+        <div className="space-y-10">
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 block text-center">Total Commanders (Players + AI)</label>
+            <div className="grid grid-cols-4 md:grid-cols-7 gap-3">
+              {[2, 3, 4, 5, 6, 7, 8].map((count) => (
+                <button
+                  key={count}
+                  onClick={() => {
+                    setSelectedCount(count);
+                    if (aiCount >= count) setAiCount(count - 1);
+                  }}
+                  className={`aspect-square rounded-2xl flex flex-col items-center justify-center transition-all border-2 ${
+                    selectedCount === count 
+                      ? 'bg-cyan-500/20 border-cyan-500 scale-110 shadow-lg shadow-cyan-500/20' 
+                      : 'bg-slate-900/50 border-white/5 hover:border-white/20'
+                  }`}
+                >
+                  <span className={`text-xl font-bold ${selectedCount === count ? 'text-white' : 'text-slate-500'}`}>{count}</span>
+                  <div className="flex gap-0.5 mt-1">
+                    {Array.from({length: count}).map((_, i) => (
+                      <div 
+                        key={i} 
+                        className="w-1 h-1 rounded-full" 
+                        style={{ backgroundColor: PLAYER_COLORS[`P${i+1}` as Owner] }} 
+                      />
+                    ))}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-6 block text-center">AI Opponents (0-4)</label>
+            <div className="flex justify-center gap-4">
+              {[0, 1, 2, 3, 4].map((count) => {
+                const disabled = count >= selectedCount;
+                return (
+                  <button
+                    key={count}
+                    disabled={disabled}
+                    onClick={() => setAiCount(count)}
+                    className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center transition-all border-2 ${
+                      disabled ? 'opacity-20 cursor-not-allowed grayscale' :
+                      aiCount === count 
+                        ? 'bg-emerald-500/20 border-emerald-500 scale-110' 
+                        : 'bg-slate-900/50 border-white/5 hover:border-white/20'
+                    }`}
+                  >
+                    <span className="text-lg font-bold">🤖</span>
+                    <span className="text-[10px] font-black">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
 
-        <div className="bg-slate-900/40 rounded-3xl p-6 mb-10 border border-white/5 text-center">
+        <div className="bg-slate-900/40 rounded-3xl p-6 my-10 border border-white/5 text-center">
           <div className="text-xs text-slate-400 mb-1">Mission Preview</div>
           <div className="text-sm font-bold text-slate-200">
-            {selectedCount} Players • 24 Star Systems • Standard Map (1200x1200ly)
+            {selectedCount - effectiveAiCount} Human • {effectiveAiCount} AI • 24 Star Systems
           </div>
         </div>
 
@@ -67,7 +102,7 @@ const NewGameModal: React.FC<NewGameModalProps> = ({ isOpen, onClose, onConfirm 
             Cancel
           </button>
           <button 
-            onClick={() => onConfirm(selectedCount)}
+            onClick={() => onConfirm(selectedCount, effectiveAiCount)}
             className="flex-[2] py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-bold text-lg shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
           >
             Launch Mission

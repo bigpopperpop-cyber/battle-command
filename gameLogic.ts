@@ -23,7 +23,7 @@ export const PLAYER_COLORS: Record<Owner, string> = {
   NEUTRAL: '#94a3b8' // Gray
 };
 
-export const generateInitialState = (playerCount: number = 2): GameState => {
+export const generateInitialState = (playerCount: number = 2, aiCount: number = 0): GameState => {
   const planets: Planet[] = PLANET_NAMES.slice(0, PLANET_COUNT).map((name, i) => {
     let owner: Owner = 'NEUTRAL';
     if (i < playerCount) {
@@ -46,12 +46,20 @@ export const generateInitialState = (playerCount: number = 2): GameState => {
 
   const ships: Ship[] = [];
   const playerCredits: Record<string, number> = {};
+  const aiPlayers: Owner[] = [];
+
+  // Human players are first, AI players are last
+  const humanCount = playerCount - aiCount;
 
   for (let i = 1; i <= playerCount; i++) {
     const pId = `P${i}` as Owner;
     playerCredits[pId] = 1000;
     const home = planets.find(p => p.owner === pId)!;
     
+    if (i > humanCount) {
+      aiPlayers.push(pId);
+    }
+
     ships.push({
       id: `s-${pId}-0`,
       name: `${pId} Explorer`,
@@ -73,11 +81,11 @@ export const generateInitialState = (playerCount: number = 2): GameState => {
     planets,
     ships,
     playerCredits,
-    logs: ["Commander, Galaxy initialization complete. Share the game data with your allies."],
+    logs: ["Commander, Galaxy initialization complete. " + (aiCount > 0 ? `${aiCount} AI Commanders active.` : "All sectors localized.")],
     playerCount,
+    aiPlayers,
     isHost: true,
     activePlayer: 'P1',
-    // Fix: replaced 'submittedOrders: {}' with 'readyPlayers: []' to match GameState interface
     readyPlayers: []
   };
 };

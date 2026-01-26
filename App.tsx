@@ -7,9 +7,10 @@ import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal from './components/HelpModal';
 import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
+import { getAiMoves } from './services/geminiService';
 
 const App: React.FC = () => {
-  const [gameState, setGameState] = useState<GameState>(() => generateInitialState(8));
+  const [gameState, setGameState] = useState<GameState>(() => generateInitialState(8, 2));
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<'PLANET' | 'SHIP' | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
@@ -17,6 +18,7 @@ const App: React.FC = () => {
   const [isHostDashboardOpen, setIsHostDashboardOpen] = useState(false);
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
 
   // Auto-load galaxy if joined via link
@@ -26,10 +28,8 @@ const App: React.FC = () => {
       try {
         const dataStr = hash.substring(6);
         const incomingState: GameState = JSON.parse(atob(dataStr));
-        // Reset logs to show join message
         incomingState.logs = [`🌌 Successfully joined Galaxy. Command initialized for Round ${incomingState.round}.`, ...incomingState.logs].slice(0, 15);
         setGameState(incomingState);
-        // Clean the URL so refreshing doesn't reset state
         window.history.replaceState(null, "", window.location.pathname);
       } catch (e) {
         console.error("Failed to join via link", e);
@@ -37,7 +37,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // 1. SMART SHARE (Player Side - Send Moves)
   const shareTurn = async () => {
     const data = btoa(JSON.stringify(gameState));
     const shareText = `COMMAND_DATA:${data}`;
@@ -56,7 +55,6 @@ const App: React.FC = () => {
     }
   };
 
-  // 2. INVITE ALLIES (Host Side - Prepare Link/QR)
   const inviteAllies = () => {
     const data = btoa(JSON.stringify(gameState));
     const joinUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
@@ -69,7 +67,6 @@ const App: React.FC = () => {
     alert(alertMsg);
   };
 
-  // 3. SMART MERGE (Host Side)
   const syncFromClipboard = async () => {
     try {
       const text = await navigator.clipboard.readText();
@@ -88,20 +85,14 @@ const App: React.FC = () => {
         }
 
         const mergedPlanets = prev.planets.map(p => 
-          p.owner === sender 
-            ? incomingState.planets.find(ip => ip.id === p.id) || p 
-            : p
+          p.owner === sender ? (incomingState.planets.find(ip => ip.id === p.id) || p) : p
         );
 
         const mergedShips = prev.ships.map(s => 
-          s.owner === sender 
-            ? incomingState.ships.find(is => is.id === s.id) || s 
-            : s
+          s.owner === sender ? (incomingState.ships.find(is => is.id === s.id) || s) : s
         );
 
-        const newReady = prev.readyPlayers.includes(sender) 
-          ? prev.readyPlayers 
-          : [...prev.readyPlayers, sender];
+        const newReady = prev.readyPlayers.includes(sender) ? prev.readyPlayers : [...prev.readyPlayers, sender];
 
         return {
           ...prev,
@@ -118,61 +109,91 @@ const App: React.FC = () => {
     }
   };
 
-  const processGlobalTurn = () => {
-    setGameState(prev => {
-      const nextPlanets = prev.planets.map(p => ({...p}));
-      const nextShips = prev.ships.map(s => ({...s}));
-      const newCredits = { ...prev.playerCredits };
-      const newLogs = [`--- Turn ${prev.round} Results ---`];
+  const processGlobalTurn = async () => {
+    setIsProcessing(true);
+    let nextState = { ...gameState };
 
-      nextPlanets.forEach(p => {
-        if (p.owner !== 'NEUTRAL') {
-          const income = (p.mines * 50) + (p.factories * 20) + 100;
-          newCredits[p.owner] = (newCredits[p.owner] || 0) + income;
+    // 1. Generate AI Moves
+    for (const aiId of nextState.aiPlayers) {
+      const moves = await getAiMoves(nextState, aiId);
+      
+      // Apply AI Ship Orders
+      moves.shipOrders.forEach((order: any) => {
+        const ship = nextState.ships.find(s => s.id === order.shipId);
+        if (ship) {
+          ship.status = 'MOVING';
+          ship.targetPlanetId = order.targetPlanetId;
+          ship.currentPlanetId = undefined;
         }
       });
 
-      nextShips.forEach(s => {
-        if (s.status === 'MOVING' && s.targetPlanetId) {
-          const target = nextPlanets.find(p => p.id === s.targetPlanetId);
-          if (target) {
-            const dx = target.x - s.x;
-            const dy = target.y - s.y;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            const speed = SHIP_SPEEDS[s.type];
+      // Apply AI Planet Builds
+      moves.planetOrders.forEach((order: any) => {
+        const planet = nextState.planets.find(p => p.id === order.planetId);
+        const cost = 100;
+        if (planet && nextState.playerCredits[aiId] >= cost) {
+          nextState.playerCredits[aiId] -= cost;
+          if (order.build === 'MINE') planet.mines++;
+          else if (order.build === 'FACTORY') planet.factories++;
+        }
+      });
+    }
 
-            if (dist < speed) {
-              s.x = target.x;
-              s.y = target.y;
-              s.status = 'ORBITING';
-              s.currentPlanetId = target.id;
-              if (target.owner === 'NEUTRAL') {
-                target.owner = s.owner;
-                newLogs.push(`🚀 ${s.owner} has colonized ${target.name}!`);
-              }
-            } else {
-              s.x += (dx / dist) * speed;
-              s.y += (dy / dist) * speed;
+    // 2. Standard Turn Processing (Movement, Income, etc)
+    const nextPlanets = nextState.planets.map(p => ({...p}));
+    const nextShips = nextState.ships.map(s => ({...s}));
+    const newCredits = { ...nextState.playerCredits };
+    const newLogs = [`--- Turn ${nextState.round} Results ---`];
+
+    nextPlanets.forEach(p => {
+      if (p.owner !== 'NEUTRAL') {
+        const income = (p.mines * 50) + (p.factories * 20) + 100;
+        newCredits[p.owner] = (newCredits[p.owner] || 0) + income;
+      }
+    });
+
+    nextShips.forEach(s => {
+      if (s.status === 'MOVING' && s.targetPlanetId) {
+        const target = nextPlanets.find(p => p.id === s.targetPlanetId);
+        if (target) {
+          const dx = target.x - s.x;
+          const dy = target.y - s.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          const speed = SHIP_SPEEDS[s.type];
+
+          if (dist < speed) {
+            s.x = target.x;
+            s.y = target.y;
+            s.status = 'ORBITING';
+            s.currentPlanetId = target.id;
+            if (target.owner === 'NEUTRAL') {
+              target.owner = s.owner;
+              newLogs.push(`🚀 ${s.owner} has colonized ${target.name}!`);
             }
+          } else {
+            s.x += (dx / dist) * speed;
+            s.y += (dy / dist) * speed;
           }
         }
-      });
-
-      return {
-        ...prev,
-        round: prev.round + 1,
-        planets: nextPlanets,
-        ships: nextShips,
-        playerCredits: newCredits,
-        logs: [...newLogs, ...prev.logs].slice(0, 15),
-        readyPlayers: [] 
-      };
+      }
     });
+
+    setGameState({
+      ...nextState,
+      round: nextState.round + 1,
+      planets: nextPlanets,
+      ships: nextShips,
+      playerCredits: newCredits,
+      logs: [...newLogs, ...nextState.logs].slice(0, 15),
+      readyPlayers: [] 
+    });
+    
+    setIsProcessing(false);
     setIsHostDashboardOpen(false);
   };
 
-  const handleStartNewGame = (count: number) => {
-    setGameState(generateInitialState(count));
+  const handleStartNewGame = (count: number, aiCount: number) => {
+    setGameState(generateInitialState(count, aiCount));
     setIsNewGameModalOpen(false);
     setIsHostDashboardOpen(false);
     setSelectedId(null);
@@ -210,6 +231,15 @@ const App: React.FC = () => {
   const selectedPlanet = selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null;
   const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
 
+  // Calculate if we have all human players ready (AI are always ready)
+  const humanPlayers = Array.from({length: gameState.playerCount})
+    .map((_, i) => `P${i+1}` as Owner)
+    .filter(p => !gameState.aiPlayers.includes(p));
+  
+  const humanReadyCount = gameState.readyPlayers.filter(p => humanPlayers.includes(p)).length;
+  // If we are playing locally, playerCount - aiCount includes active player
+  const canStartTurn = humanReadyCount >= humanPlayers.length - 1;
+
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
       {/* HUD */}
@@ -231,7 +261,7 @@ const App: React.FC = () => {
              <div className="text-xs text-slate-500 font-bold uppercase tracking-tighter">Round {gameState.round}</div>
              <div className={`px-4 py-1 rounded-full text-[10px] font-bold border-2 flex items-center gap-2 transition-all`} 
                   style={{ borderColor: PLAYER_COLORS[gameState.activePlayer], color: PLAYER_COLORS[gameState.activePlayer], boxShadow: `0 0 15px ${PLAYER_COLORS[gameState.activePlayer]}44` }}>
-               {gameState.activePlayer}
+               {gameState.activePlayer} {gameState.aiPlayers.includes(gameState.activePlayer) && '🤖'}
              </div>
           </div>
         </div>
@@ -246,9 +276,9 @@ const App: React.FC = () => {
             className="bg-slate-800 hover:bg-slate-700 px-5 py-2.5 rounded-2xl font-bold text-sm transition-all flex items-center gap-2"
           >
              📡 <span className="hidden md:inline">Command Center</span>
-             {gameState.readyPlayers.length > 0 && (
+             {humanReadyCount > 0 && (
                <span className="w-5 h-5 bg-cyan-500 text-slate-950 text-[10px] rounded-full flex items-center justify-center font-black animate-pulse">
-                 {gameState.readyPlayers.length}
+                 {humanReadyCount}
                </span>
              )}
           </button>
@@ -301,7 +331,6 @@ const App: React.FC = () => {
           </div>
         )}
 
-        {/* Floating Logs */}
         <div className="absolute bottom-6 left-6 w-80 glass-card rounded-2xl p-4 bg-[#050b1a]/80 hidden md:block">
           <h4 className="text-[10px] font-bold uppercase text-cyan-400 mb-2 flex items-center gap-2">
             <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" /> Subspace Feed
@@ -312,7 +341,11 @@ const App: React.FC = () => {
         </div>
 
         <div className="absolute bottom-6 right-6 flex items-center gap-3">
-           <button onClick={shareTurn} className="bg-cyan-600 hover:bg-cyan-500 px-6 py-4 rounded-3xl font-bold text-sm shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center gap-2">
+           <button 
+             onClick={shareTurn} 
+             disabled={gameState.aiPlayers.includes(gameState.activePlayer)}
+             className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 px-6 py-4 rounded-3xl font-bold text-sm shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center gap-2"
+           >
              📤 Send Moves
            </button>
         </div>
@@ -350,12 +383,13 @@ const App: React.FC = () => {
               <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Commander Readiness</div>
               {Array.from({length: gameState.playerCount}).map((_, i) => {
                 const pId = `P${i+1}` as Owner;
-                const isReady = gameState.readyPlayers.includes(pId);
+                const isAi = gameState.aiPlayers.includes(pId);
+                const isReady = gameState.readyPlayers.includes(pId) || isAi;
                 return (
                   <div key={pId} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-white/5">
                     <div className="flex items-center gap-3">
                       <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PLAYER_COLORS[pId] }} />
-                      <span className="font-bold text-xs">P{i+1}</span>
+                      <span className="font-bold text-xs">P{i+1} {isAi ? '🤖' : ''}</span>
                     </div>
                     {isReady ? (
                       <span className="text-emerald-400 text-[10px] font-bold">✅ READY</span>
@@ -373,10 +407,15 @@ const App: React.FC = () => {
                </button>
                <button 
                   onClick={processGlobalTurn} 
-                  disabled={gameState.readyPlayers.length < gameState.playerCount - 1}
-                  className="w-full py-5 bg-cyan-600 disabled:opacity-30 disabled:grayscale rounded-2xl font-bold text-base shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
+                  disabled={!canStartTurn || isProcessing}
+                  className="w-full py-5 bg-cyan-600 disabled:opacity-30 disabled:grayscale rounded-2xl font-bold text-base shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center justify-center gap-3"
                >
-                 🚀 START NEW TURN
+                 {isProcessing ? (
+                   <>
+                     <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
+                     CALCULATING...
+                   </>
+                 ) : "🚀 START NEW TURN"}
                </button>
             </div>
           </div>
@@ -389,11 +428,12 @@ const App: React.FC = () => {
           {Array.from({length: gameState.playerCount}).map((_, i) => {
             const pId = `P${i+1}` as Owner;
             const isActive = gameState.activePlayer === pId;
+            const isAi = gameState.aiPlayers.includes(pId);
             return (
               <button 
                 key={i}
                 onClick={() => setGameState(p => ({...p, activePlayer: pId}))}
-                className={`w-9 h-9 md:w-12 md:h-12 rounded-xl md:rounded-2xl font-black text-[10px] md:text-sm transition-all border-2 flex items-center justify-center ${isActive ? 'scale-110 shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'opacity-30 hover:opacity-100'}`}
+                className={`w-9 h-9 md:w-12 md:h-12 rounded-xl md:rounded-2xl font-black text-[10px] md:text-sm transition-all border-2 flex items-center justify-center relative ${isActive ? 'scale-110 shadow-[0_0_20px_rgba(255,255,255,0.1)]' : 'opacity-30 hover:opacity-100'}`}
                 style={{ 
                   borderColor: PLAYER_COLORS[pId],
                   backgroundColor: isActive ? `${PLAYER_COLORS[pId]}22` : 'transparent',
@@ -402,6 +442,7 @@ const App: React.FC = () => {
                 }}
               >
                 P{i+1}
+                {isAi && <span className="absolute -top-1 -right-1 text-[8px]">🤖</span>}
               </button>
             );
           })}
