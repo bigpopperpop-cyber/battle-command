@@ -111,44 +111,53 @@ const App: React.FC = () => {
 
   const processGlobalTurn = async () => {
     setIsProcessing(true);
-    let nextState = { ...gameState };
+    
+    // Deep copies to ensure immutability during AI move calculation
+    let nextPlanets = gameState.planets.map(p => ({...p}));
+    let nextShips = gameState.ships.map(s => ({...s}));
+    let nextCredits = { ...gameState.playerCredits };
 
     // 1. Generate AI Moves
-    for (const aiId of nextState.aiPlayers) {
-      const moves = await getAiMoves(nextState, aiId);
-      
-      // Apply AI Ship Orders
-      moves.shipOrders.forEach((order: any) => {
-        const ship = nextState.ships.find(s => s.id === order.shipId);
-        if (ship) {
-          ship.status = 'MOVING';
-          ship.targetPlanetId = order.targetPlanetId;
-          ship.currentPlanetId = undefined;
+    for (const aiId of gameState.aiPlayers) {
+      try {
+        const moves = await getAiMoves(gameState, aiId);
+        
+        // Apply AI Ship Orders
+        if (moves.shipOrders) {
+          moves.shipOrders.forEach((order: any) => {
+            const ship = nextShips.find(s => s.id === order.shipId);
+            if (ship) {
+              ship.status = 'MOVING';
+              ship.targetPlanetId = order.targetPlanetId;
+              ship.currentPlanetId = undefined;
+            }
+          });
         }
-      });
 
-      // Apply AI Planet Builds
-      moves.planetOrders.forEach((order: any) => {
-        const planet = nextState.planets.find(p => p.id === order.planetId);
-        const cost = 100;
-        if (planet && nextState.playerCredits[aiId] >= cost) {
-          nextState.playerCredits[aiId] -= cost;
-          if (order.build === 'MINE') planet.mines++;
-          else if (order.build === 'FACTORY') planet.factories++;
+        // Apply AI Planet Builds
+        if (moves.planetOrders) {
+          moves.planetOrders.forEach((order: any) => {
+            const planet = nextPlanets.find(p => p.id === order.planetId);
+            const cost = 100;
+            if (planet && nextCredits[aiId] >= cost) {
+              nextCredits[aiId] -= cost;
+              if (order.build === 'MINE') planet.mines++;
+              else if (order.build === 'FACTORY') planet.factories++;
+            }
+          });
         }
-      });
+      } catch (e) {
+        console.error(`AI ${aiId} failed to generate orders:`, e);
+      }
     }
 
     // 2. Standard Turn Processing (Movement, Income, etc)
-    const nextPlanets = nextState.planets.map(p => ({...p}));
-    const nextShips = nextState.ships.map(s => ({...s}));
-    const newCredits = { ...nextState.playerCredits };
-    const newLogs = [`--- Turn ${nextState.round} Results ---`];
+    const newLogs = [`--- Turn ${gameState.round} Results ---`];
 
     nextPlanets.forEach(p => {
       if (p.owner !== 'NEUTRAL') {
         const income = (p.mines * 50) + (p.factories * 20) + 100;
-        newCredits[p.owner] = (newCredits[p.owner] || 0) + income;
+        nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
       }
     });
 
@@ -159,7 +168,7 @@ const App: React.FC = () => {
           const dx = target.x - s.x;
           const dy = target.y - s.y;
           const dist = Math.sqrt(dx * dx + dy * dy);
-          const speed = SHIP_SPEEDS[s.type];
+          const speed = SHIP_SPEEDS[s.type as keyof typeof SHIP_SPEEDS] || 100;
 
           if (dist < speed) {
             s.x = target.x;
@@ -178,15 +187,15 @@ const App: React.FC = () => {
       }
     });
 
-    setGameState({
-      ...nextState,
-      round: nextState.round + 1,
+    setGameState(prev => ({
+      ...prev,
+      round: prev.round + 1,
       planets: nextPlanets,
       ships: nextShips,
-      playerCredits: newCredits,
-      logs: [...newLogs, ...nextState.logs].slice(0, 15),
+      playerCredits: nextCredits,
+      logs: [...newLogs, ...prev.logs].slice(0, 15),
       readyPlayers: [] 
-    });
+    }));
     
     setIsProcessing(false);
     setIsHostDashboardOpen(false);
@@ -231,18 +240,15 @@ const App: React.FC = () => {
   const selectedPlanet = selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null;
   const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
 
-  // Calculate if we have all human players ready (AI are always ready)
   const humanPlayers = Array.from({length: gameState.playerCount})
     .map((_, i) => `P${i+1}` as Owner)
     .filter(p => !gameState.aiPlayers.includes(p));
   
   const humanReadyCount = gameState.readyPlayers.filter(p => humanPlayers.includes(p)).length;
-  // If we are playing locally, playerCount - aiCount includes active player
   const canStartTurn = humanReadyCount >= humanPlayers.length - 1;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
-      {/* HUD */}
       <header className="h-20 flex items-center justify-between px-6 glass-card border-b-white/5 z-20">
         <div className="flex items-center gap-4">
           <button 
@@ -285,7 +291,6 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Map Content */}
       <main className="flex-1 relative">
         <MapView 
           planets={gameState.planets}
@@ -351,7 +356,6 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* Host Dashboard Drawer */}
       {isHostDashboardOpen && (
         <div className="fixed inset-0 z-[100] flex justify-end">
           <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setIsHostDashboardOpen(false)} />
@@ -422,7 +426,6 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {/* Footer Nav */}
       <footer className="h-24 glass-card border-t-white/5 flex items-center justify-between px-6 md:px-10">
         <div className="flex gap-2 md:gap-3 flex-wrap max-w-[70%]">
           {Array.from({length: gameState.playerCount}).map((_, i) => {
