@@ -1,5 +1,4 @@
-
-import React from 'react';
+import React, { useState } from 'react';
 
 interface InviteModalProps {
   isOpen: boolean;
@@ -8,9 +7,12 @@ interface InviteModalProps {
 }
 
 const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl }) => {
+  const [copied, setCopied] = useState(false);
+
   if (!isOpen) return null;
 
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=300x300&color=22d3ee&bgcolor=0f172a&data=${encodeURIComponent(joinUrl)}`;
+  // Use high-contrast black/white for best scanner compatibility
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&color=000000&bgcolor=ffffff&margin=20&data=${encodeURIComponent(joinUrl)}`;
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -25,13 +27,14 @@ const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl }) =
       }
     } else {
       navigator.clipboard.writeText(joinUrl);
-      alert("Link copied to clipboard!");
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
     }
   };
 
   return (
     <div className="fixed inset-0 z-[120] flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={onClose} />
+      <div className="absolute inset-0 bg-slate-950/95 backdrop-blur-xl" onClick={onClose} />
       
       <div className="relative w-full max-w-md glass-card rounded-[3rem] border-cyan-500/30 p-8 shadow-[0_0_100px_rgba(34,211,238,0.15)] animate-in zoom-in-95 duration-300">
         <div className="text-center mb-6">
@@ -40,25 +43,31 @@ const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl }) =
         </div>
 
         <div className="flex flex-col items-center gap-6 mb-8">
-          <div className="p-4 bg-slate-900 rounded-[2rem] border border-cyan-500/20 shadow-inner">
+          <div className="p-4 bg-white rounded-3xl border-4 border-white shadow-2xl">
             <img 
               src={qrUrl} 
               alt="Join QR Code" 
-              className="w-48 h-48 rounded-xl"
-              style={{ imageRendering: 'pixelated' }}
+              className="w-56 h-56 rounded-lg"
+              style={{ imageRendering: 'auto' }}
             />
           </div>
           <p className="text-xs text-slate-400 text-center px-4 leading-relaxed">
-            Friends can scan this QR code or use the link below to join your session on their devices.
+            Scan this high-contrast code with your camera or share the direct link to bring your allies into this sector.
           </p>
         </div>
 
         <div className="space-y-3">
           <button 
             onClick={handleShare}
-            className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-bold text-sm shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center justify-center gap-2"
+            className={`w-full py-4 rounded-2xl font-bold text-sm shadow-xl transition-all active:scale-95 flex items-center justify-center gap-2 ${
+              copied ? 'bg-emerald-600 shadow-emerald-900/40' : 'bg-cyan-600 hover:bg-cyan-500 shadow-cyan-900/40'
+            }`}
           >
-            <span>🔗</span> {navigator.share ? 'Share Invite Link' : 'Copy Invite Link'}
+            {copied ? (
+              <><span>✅</span> Link Copied!</>
+            ) : (
+              <><span>🔗</span> {navigator.share ? 'Share Invite Link' : 'Copy Invite Link'}</>
+            )}
           </button>
           
           <button 

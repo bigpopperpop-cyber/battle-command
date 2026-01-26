@@ -14,7 +14,6 @@ const App: React.FC = () => {
   const [selectedType, setSelectedType] = useState<'PLANET' | 'SHIP' | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
-  const [isHostDashboardOpen, setIsHostDashboardOpen] = useState(false);
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -27,7 +26,9 @@ const App: React.FC = () => {
       try {
         const dataStr = hash.substring(6);
         const incomingState: GameState = JSON.parse(atob(dataStr));
-        incomingState.logs = [`🌌 Successfully joined Galaxy. Command initialized for Round ${incomingState.round}.`, ...incomingState.logs].slice(0, 15);
+        // Hydrate default values for missing fields to ensure compatibility
+        incomingState.logs = [`🌌 Successfully joined Galaxy. Command initialized for Round ${incomingState.round}.`, `Welcome, Commander. Subspace relay established.`];
+        incomingState.readyPlayers = [];
         setGameState(incomingState);
         window.history.replaceState(null, "", window.location.pathname);
       } catch (e) {
@@ -36,8 +37,14 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Scrub state of heavy/transient data for cleaner sharing
+  const getShareableData = (state: GameState) => {
+    const { logs, readyPlayers, ...scrubbed } = state;
+    return btoa(JSON.stringify(scrubbed));
+  };
+
   const shareTurn = async () => {
-    const data = btoa(JSON.stringify(gameState));
+    const data = getShareableData(gameState);
     const shareText = `COMMAND_DATA:${data}`;
     
     if (navigator.share) {
@@ -55,7 +62,7 @@ const App: React.FC = () => {
   };
 
   const inviteAllies = () => {
-    const data = btoa(JSON.stringify(gameState));
+    const data = getShareableData(gameState);
     const joinUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
     setShareUrl(joinUrl);
     setIsInviteModalOpen(true);
@@ -69,7 +76,6 @@ const App: React.FC = () => {
   const processGlobalTurn = async () => {
     setIsProcessing(true);
     
-    // Deep copies for immutability
     let nextPlanets = gameState.planets.map(p => ({...p}));
     let nextShips = gameState.ships.map(s => ({...s}));
     let nextCredits = { ...gameState.playerCredits };
@@ -131,29 +137,25 @@ const App: React.FC = () => {
     });
 
     // 3. Colonization & Presence Pass
-    // Check every planet to see if a ship is present and claim neutral ones
     nextPlanets.forEach(planet => {
       const shipsPresent = nextShips.filter(s => 
         Math.abs(s.x - planet.x) < 5 && Math.abs(s.y - planet.y) < 5
       );
 
       if (shipsPresent.length > 0) {
-        // If neutral, first ship's owner claims it
         if (planet.owner === 'NEUTRAL') {
           const newOwner = shipsPresent[0].owner;
           planet.owner = newOwner;
-          planet.population = 500; // Colonization starting pop
+          planet.population = 500;
           newLogs.push(`🚀 ${newOwner} has colonized ${planet.name}!`);
         }
-        
-        // Update all ships at this location to be orbiting this planet
         shipsPresent.forEach(s => {
           s.currentPlanetId = planet.id;
         });
       }
     });
 
-    // 4. Economy Phase (Income generation)
+    // 4. Economy Phase
     nextPlanets.forEach(p => {
       if (p.owner !== 'NEUTRAL') {
         const income = (p.mines * 50) + (p.factories * 20) + 100;
@@ -172,13 +174,11 @@ const App: React.FC = () => {
     }));
     
     setIsProcessing(false);
-    setIsHostDashboardOpen(false);
   };
 
   const handleStartNewGame = (count: number, aiCount: number) => {
     setGameState(generateInitialState(count, aiCount));
     setIsNewGameModalOpen(false);
-    setIsHostDashboardOpen(false);
     setSelectedId(null);
   };
 
@@ -243,14 +243,7 @@ const App: React.FC = () => {
 
   const selectedPlanet = selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null;
   const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
-
   const currentCredits = gameState.playerCredits[gameState.activePlayer] || 0;
-
-  const humanPlayers = Array.from({length: gameState.playerCount})
-    .map((_, i) => `P${i+1}` as Owner)
-    .filter(p => !gameState.aiPlayers.includes(p));
-  
-  const humanReadyCount = gameState.readyPlayers.filter(p => humanPlayers.includes(p)).length;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
