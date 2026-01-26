@@ -1,12 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameState, Owner } from "../types";
 
-// Accessing process.env via any to prevent tsc from failing during build
-// Vite will replace the literal string "process.env.API_KEY" during the build process
-const getApiKey = () => (process as any).env.API_KEY || '';
-
 export const getAdvisorFeedback = async (gameState: GameState, userPrompt: string) => {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-3-flash-preview";
   
   const systemPrompt = `You are "Admiral Jarvis", the central advisor for a casual space strategy game.
@@ -43,7 +39,7 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
 };
 
 export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-3-flash-preview";
   
   const myPlanets = gameState.planets.filter(p => p.owner === aiPlayerId);
