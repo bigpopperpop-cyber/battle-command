@@ -94,7 +94,8 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
       }
     });
 
-    return JSON.parse(response.text || '{}');
+    const jsonText = response.text || '{}';
+    return JSON.parse(jsonText);
   } catch (error) {
     console.error("AI Decision Error:", error);
     return { shipOrders: [], planetOrders: [] };
