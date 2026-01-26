@@ -44,6 +44,7 @@ export interface GameState {
   planets: Planet[];
   ships: Ship[];
   playerCredits: Record<string, number>;
+  playerNames: Record<string, string>;
   logs: string[];
   playerCount: number;
   aiPlayers: Owner[];

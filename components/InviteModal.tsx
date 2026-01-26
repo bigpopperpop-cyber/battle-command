@@ -11,8 +11,8 @@ const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl }) =
 
   if (!isOpen) return null;
 
-  // Use high-contrast black/white for best scanner compatibility
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=400x400&color=000000&bgcolor=ffffff&margin=20&data=${encodeURIComponent(joinUrl)}`;
+  // Use low error correction (ecc=L) to keep the QR pattern as "chunkier" and easier to scan for long URLs
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=000000&bgcolor=ffffff&margin=20&ecc=L&data=${encodeURIComponent(joinUrl)}`;
 
   const handleShare = async () => {
     if (navigator.share) {
@@ -43,16 +43,16 @@ const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl }) =
         </div>
 
         <div className="flex flex-col items-center gap-6 mb-8">
-          <div className="p-4 bg-white rounded-3xl border-4 border-white shadow-2xl">
+          <div className="p-4 bg-white rounded-3xl border-4 border-white shadow-2xl flex items-center justify-center">
             <img 
               src={qrUrl} 
               alt="Join QR Code" 
-              className="w-56 h-56 rounded-lg"
-              style={{ imageRendering: 'auto' }}
+              className="w-64 h-64 rounded-lg"
+              style={{ imageRendering: 'pixelated' }}
             />
           </div>
           <p className="text-xs text-slate-400 text-center px-4 leading-relaxed">
-            Scan this high-contrast code with your camera or share the direct link to bring your allies into this sector.
+            Scan this code with your camera or share the direct link to bring your allies into this sector.
           </p>
         </div>
 

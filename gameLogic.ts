@@ -26,7 +26,6 @@ export const PLAYER_COLORS: Record<Owner, string> = {
 export const SHIP_SPEEDS = { SCOUT: 120, FREIGHTER: 60, WARSHIP: 80 };
 export const SHIP_COSTS = { SCOUT: 200, FREIGHTER: 400, WARSHIP: 800 };
 
-// Simple seeded random generator (Mulberry32)
 const seededRandom = (a: number) => {
   return function() {
     let t = a += 0x6D2B79F5;
@@ -36,7 +35,12 @@ const seededRandom = (a: number) => {
   }
 }
 
-export const generateInitialState = (playerCount: number = 2, aiCount: number = 0, seed?: number): GameState => {
+export const generateInitialState = (
+  playerCount: number = 2, 
+  aiCount: number = 0, 
+  seed?: number,
+  customNames?: Record<string, string>
+): GameState => {
   const actualSeed = seed ?? Math.floor(Math.random() * 1000000);
   const rnd = seededRandom(actualSeed);
 
@@ -62,12 +66,17 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
 
   const ships: Ship[] = [];
   const playerCredits: Record<string, number> = {};
+  const playerNames: Record<string, string> = customNames || {};
   const aiPlayers: Owner[] = [];
   const humanCount = playerCount - aiCount;
 
   for (let i = 1; i <= playerCount; i++) {
     const pId = `P${i}` as Owner;
     playerCredits[pId] = 1000;
+    if (!playerNames[pId]) {
+      playerNames[pId] = `Empire of ${pId}`;
+    }
+
     const home = planets.find(p => p.owner === pId)!;
     
     if (i > humanCount) {
@@ -76,7 +85,7 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
 
     ships.push({
       id: `s-${pId}-0`,
-      name: `${pId} Explorer`,
+      name: `${playerNames[pId]} Explorer`,
       type: 'SCOUT',
       owner: pId,
       x: home.x,
@@ -96,7 +105,8 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
     planets,
     ships,
     playerCredits,
-    logs: ["Commander, Galaxy initialization complete. " + (aiCount > 0 ? `${aiCount} AI Commanders active.` : "All sectors localized.")],
+    playerNames,
+    logs: ["Commander, Galaxy initialization complete. Names registered to central hub."],
     playerCount,
     aiPlayers,
     isHost: true,
