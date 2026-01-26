@@ -1,12 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameState, Owner } from "../types";
 
-// Accessing process.env via any to prevent tsc from failing during build
-// Vite will replace this string during the build process
-const getApiKey = () => (process as any).env.API_KEY || '';
-
 export const getAdvisorFeedback = async (gameState: GameState, userPrompt: string) => {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   const model = "gemini-3-flash-preview";
   
   const systemPrompt = `You are "Admiral Jarvis", the central advisor for a casual space strategy game.
@@ -15,17 +11,16 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
   
   YOUR PERSONA:
   - You are WARM, ENCOURAGING, and HELPFUL.
-  - Avoid overly technical military jargon unless it adds to the fun atmosphere.
-  - Your goal is to make the player (specifically someone who wants a fun, stress-free game) feel like a genius commander.
-  - If they have no ships moving, suggest they explore.
-  - If they have lots of money, suggest building a factory or mine.
+  - Your goal is to make the player feel like a genius commander.
+  - Suggest exploration if ships are idle.
+  - Suggest building mines/factories if credits are high.
   
   CURRENT DATA:
   - Credits: ${gameState.playerCredits[gameState.activePlayer]}
   - Planets Owned: ${gameState.planets.filter(p => p.owner === gameState.activePlayer).length}
   - Total Fleet: ${gameState.ships.filter(s => s.owner === gameState.activePlayer).length}
   
-  Be brief. Use emojis like 🚀, ✨, and 🪐 to keep it friendly.`;
+  Be brief. Use emojis like 🚀, ✨, and 🪐.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -44,7 +39,7 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
 };
 
 export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
-  const ai = new GoogleGenAI({ apiKey: getApiKey() });
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
   const model = "gemini-3-flash-preview";
   
   const myPlanets = gameState.planets.filter(p => p.owner === aiPlayerId);
@@ -54,15 +49,14 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
   const prompt = `You are an AI player controlling ${aiPlayerId}.
   Credits: ${gameState.playerCredits[aiPlayerId]}
   Your Ships: ${JSON.stringify(myShips.map(s => ({id: s.id, type: s.type, x: s.x, y: s.y})))}
-  Nearby Neutral Planets: ${JSON.stringify(neutralPlanets.slice(0, 10).map(p => ({id: p.id, name: p.name, x: p.x, y: p.y})))}
+  Nearby Neutral Planets: ${JSON.stringify(neutralPlanets.slice(0, 5).map(p => ({id: p.id, name: p.name, x: p.x, y: p.y})))}
   Your Planets: ${JSON.stringify(myPlanets.map(p => ({id: p.id, mines: p.mines, factories: p.factories})))}
 
   Decide your moves for this turn. 
-  1. For each IDLE or ORBITING ship, give it a targetPlanetId (prioritize neutral ones).
-  2. For each planet, decide if you want to build a 'MINE' or 'FACTORY' (Cost: 100 each). 
-  Only build if you have enough credits. Credits: ${gameState.playerCredits[aiPlayerId]}.
-
-  Return the result in JSON format.`;
+  1. For each IDLE/ORBITING ship, give it a targetPlanetId.
+  2. For each planet, decide if you want to build a 'MINE' or 'FACTORY' (Cost: 100).
+  
+  Return JSON.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -90,7 +84,7 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
                 type: Type.OBJECT,
                 properties: {
                   planetId: { type: Type.STRING },
-                  build: { type: Type.STRING, description: "'MINE' or 'FACTORY'" }
+                  build: { type: Type.STRING }
                 },
                 required: ["planetId", "build"]
               }
