@@ -5,9 +5,9 @@ export const GRID_SIZE = 1000;
 export const PLANET_COUNT = 15;
 
 const PLANET_NAMES = [
-  "Rigel VII", "Betelgeuse Prime", "Delta Pavonis", "Alpha Centauri", "Sol", 
-  "Procyon", "Sirius B", "Vega", "Altair", "Deneb", "Castor", "Pollux", 
-  "Antares", "Spica", "Arcturus"
+  "Star-Hollow", "Rose Garden", "Crystal Cove", "Silver Moon", "Sunset Isle", 
+  "Emerald Peak", "Cloud City", "Sapphire Shore", "Ruby Ridge", "Pearl Oasis", 
+  "Amber Fields", "Topaz Town", "Opal Orbit", "Jade Junction", "Quartz Quay"
 ];
 
 export const generateInitialState = (): GameState => {
@@ -18,16 +18,15 @@ export const generateInitialState = (): GameState => {
     y: Math.random() * (GRID_SIZE - 100) + 50,
     owner: i === 0 ? 'PLAYER' : (i < 4 ? 'ENEMY_A' : (i < 7 ? 'ENEMY_B' : 'NEUTRAL')),
     population: i < 7 ? 1000 : 0,
-    resources: 500,
-    factories: i < 7 ? 5 : 0,
-    mines: i < 7 ? 5 : 0,
+    goldIncome: i === 0 ? 5 : 0,
+    supplies: i === 0 ? 5 : 0,
     defense: i < 7 ? 10 : 0,
   }));
 
   const ships: Ship[] = [
     {
       id: 's-0',
-      name: 'Explorer One',
+      name: 'The Explorer',
       type: 'SCOUT',
       owner: 'PLAYER',
       x: planets[0].x,
@@ -41,7 +40,7 @@ export const generateInitialState = (): GameState => {
     },
     {
       id: 's-1',
-      name: 'Star Hauler',
+      name: 'Big Hauler',
       type: 'FREIGHTER',
       owner: 'PLAYER',
       x: planets[0].x,
@@ -59,8 +58,8 @@ export const generateInitialState = (): GameState => {
     round: 1,
     planets,
     ships,
-    credits: 1000,
-    logs: ["Commander, the star systems are waiting for your orders. We have established our base on Rigel VII."]
+    gold: 500,
+    logs: ["Hi Commander! I'm Jarvis. We've settled on Star-Hollow. Let's explore the neighborhood!"]
   };
 };
 

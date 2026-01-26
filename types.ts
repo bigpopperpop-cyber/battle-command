@@ -8,9 +8,8 @@ export interface Planet {
   y: number;
   owner: Owner;
   population: number;
-  resources: number; // Gold/Credits
-  factories: number;
-  mines: number;
+  goldIncome: number;
+  supplies: number;
   defense: number;
 }
 
@@ -36,7 +35,7 @@ export interface GameState {
   round: number;
   planets: Planet[];
   ships: Ship[];
-  credits: number;
+  gold: number;
   logs: string[];
 }
 
