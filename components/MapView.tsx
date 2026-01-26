@@ -6,14 +6,14 @@ interface MapViewProps {
   planets: Planet[];
   ships: Ship[];
   selectedId: string | null;
+  tutorialTargetId?: string | null;
   onSelect: (id: string, type: 'PLANET' | 'SHIP') => void;
 }
 
-const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect }) => {
+const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialTargetId, onSelect }) => {
   const [zoom, setZoom] = useState(0.7);
   const [offset, setOffset] = useState({ x: 50, y: 50 });
   
-  // Ref-based state to handle high-frequency drag events without lag
   const isDraggingRef = useRef(false);
   const dragStartPosRef = useRef({ x: 0, y: 0 });
   const offsetAtStartRef = useRef({ x: 50, y: 50 });
@@ -32,7 +32,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     const dx = clientX - dragStartPosRef.current.x;
     const dy = clientY - dragStartPosRef.current.y;
     
-    // Threshold to distinguish between tap and drag (4 pixels)
     if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
       hasMovedRef.current = true;
     }
@@ -48,7 +47,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   };
 
   const handleItemClick = (e: React.MouseEvent | React.TouchEvent, id: string, type: 'PLANET' | 'SHIP') => {
-    // Prevent selection if the user was actually panning the map
     if (!hasMovedRef.current) {
       e.stopPropagation();
       onSelect(id, type);
@@ -81,7 +79,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           height: `${GRID_SIZE}px`,
         }}
       >
-        {/* Navigation Grid */}
         <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
           backgroundSize: '100px 100px'
@@ -95,6 +92,22 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
             className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group"
             style={{ left: planet.x, top: planet.y }}
           >
+            {/* Tutorial resonance ring pulse */}
+            {tutorialTargetId === planet.id && (
+              <div className="absolute inset-0 w-20 h-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-500 animate-ping opacity-30 pointer-events-none" 
+                   style={{ left: '50%', top: '50%' }} />
+            )}
+
+            {/* Tutorial Anchored Tooltip */}
+            {tutorialTargetId === planet.id && (
+              <div className="absolute top-[-90px] left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 pointer-events-none animate-bounce z-[60] w-max">
+                <div className="bg-cyan-500 text-white px-5 py-2.5 rounded-2xl font-bold text-xs shadow-[0_0_30px_rgba(6,182,212,0.5)] uppercase tracking-tighter whitespace-nowrap border border-white/20">
+                  Tap Your Home Sector
+                </div>
+                <span className="text-3xl filter drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">👇</span>
+              </div>
+            )}
+
             <div 
               className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'ring-4 ring-white scale-125' : 'scale-100 group-hover:scale-110'}`}
               style={{ 

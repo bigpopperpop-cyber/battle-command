@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS } from './gameLogic';
@@ -110,7 +109,6 @@ const App: React.FC = () => {
     let nextCredits = { ...gameState.playerCredits };
     const newLogs: string[] = [`--- Turn ${gameState.round} Results ---`];
 
-    // 1. AI Logic
     for (const aiId of gameState.aiPlayers) {
       try {
         const moves = await getAiMoves(gameState, aiId);
@@ -132,7 +130,6 @@ const App: React.FC = () => {
       } catch (e) { console.error(`AI ${aiId} Error`, e); }
     }
 
-    // 2. Movement
     nextShips.forEach(s => {
       if (s.status === 'MOVING' && s.targetPlanetId) {
         const target = nextPlanets.find(p => p.id === s.targetPlanetId);
@@ -146,7 +143,6 @@ const App: React.FC = () => {
       }
     });
 
-    // 3. Presence/Colonization
     nextPlanets.forEach(planet => {
       const shipsPresent = nextShips.filter(s => Math.abs(s.x - planet.x) < 5 && Math.abs(s.y - planet.y) < 5);
       if (shipsPresent.length > 0) {
@@ -160,7 +156,6 @@ const App: React.FC = () => {
       }
     });
 
-    // 4. Economy
     nextPlanets.forEach(p => {
       if (p.owner !== 'NEUTRAL') {
         const income = (p.mines * 50) + (p.factories * 20) + 100;
@@ -213,6 +208,11 @@ const App: React.FC = () => {
   const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
   const currentCredits = gameState.playerCredits[gameState.activePlayer] || 0;
   const currentPlayerName = gameState.playerNames[gameState.activePlayer];
+
+  // Logic to find the home planet for the anchored tutorial
+  const homePlanetId = gameState.round === 1 && !selectedId 
+    ? gameState.planets.find(p => p.owner === gameState.activePlayer)?.id 
+    : null;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
@@ -280,18 +280,14 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 relative">
-        <MapView planets={gameState.planets} ships={gameState.ships} selectedId={selectedId} onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }} />
+        <MapView 
+          planets={gameState.planets} 
+          ships={gameState.ships} 
+          selectedId={selectedId} 
+          tutorialTargetId={homePlanetId}
+          onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }} 
+        />
         
-        {/* Tutorial Prompt for Round 1 */}
-        {gameState.round === 1 && !selectedId && (
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-4 animate-bounce pointer-events-none">
-            <div className="bg-cyan-500 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl shadow-cyan-500/50">
-              TAP YOUR HOME PLANET TO START
-            </div>
-            <span className="text-4xl">👇</span>
-          </div>
-        )}
-
         {selectedPlanet && (
           <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300 max-h-[calc(100%-3rem)] overflow-y-auto">
              <div className="flex justify-between items-start mb-4">
