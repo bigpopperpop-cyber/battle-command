@@ -1,4 +1,3 @@
-
 import { Planet, Ship, GameState, Owner } from './types';
 
 export const GRID_SIZE = 1200;
@@ -22,6 +21,9 @@ export const PLAYER_COLORS: Record<Owner, string> = {
   P8: '#2dd4bf', // Teal
   NEUTRAL: '#94a3b8' // Gray
 };
+
+export const SHIP_SPEEDS = { SCOUT: 120, FREIGHTER: 60, WARSHIP: 80 };
+export const SHIP_COSTS = { SCOUT: 200, FREIGHTER: 400, WARSHIP: 800 };
 
 export const generateInitialState = (playerCount: number = 2, aiCount: number = 0): GameState => {
   const planets: Planet[] = PLANET_NAMES.slice(0, PLANET_COUNT).map((name, i) => {
@@ -89,6 +91,3 @@ export const generateInitialState = (playerCount: number = 2, aiCount: number = 
     readyPlayers: []
   };
 };
-
-export const SHIP_SPEEDS = { SCOUT: 120, FREIGHTER: 60, WARSHIP: 80 };
-export const SHIP_COSTS = { SCOUT: 200, FREIGHTER: 400, WARSHIP: 800 };

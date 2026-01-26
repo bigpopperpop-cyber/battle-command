@@ -1,7 +1,6 @@
-
 import React, { useState, useEffect } from 'react';
-import { GameState, Planet, Ship, Owner } from './types';
-import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS } from './gameLogic';
+import { GameState, Planet, Ship, Owner, ShipType } from './types';
+import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal from './components/HelpModal';
@@ -224,6 +223,36 @@ const App: React.FC = () => {
     }
   };
 
+  const buildShip = (type: ShipType) => {
+    const planet = gameState.planets.find(p => p.id === selectedId);
+    const cost = SHIP_COSTS[type];
+    if (planet && gameState.playerCredits[gameState.activePlayer] >= cost) {
+      const newShip: Ship = {
+        id: `s-${gameState.activePlayer}-${Date.now()}`,
+        name: `${gameState.activePlayer} ${type} ${gameState.ships.length + 1}`,
+        type,
+        owner: gameState.activePlayer,
+        x: planet.x,
+        y: planet.y,
+        currentPlanetId: planet.id,
+        cargo: 0,
+        maxCargo: type === 'FREIGHTER' ? 500 : (type === 'SCOUT' ? 50 : 20),
+        hp: type === 'WARSHIP' ? 300 : (type === 'SCOUT' ? 100 : 50),
+        maxHp: type === 'WARSHIP' ? 300 : (type === 'SCOUT' ? 100 : 50),
+        status: 'ORBITING'
+      };
+
+      setGameState(prev => ({
+        ...prev,
+        playerCredits: { ...prev.playerCredits, [prev.activePlayer]: prev.playerCredits[prev.activePlayer] - cost },
+        ships: [...prev.ships, newShip],
+        logs: [`🛠️ Orbital Shipyard at ${planet.name} has launched a new ${type}.`, ...prev.logs].slice(0, 15)
+      }));
+    } else {
+      alert("Insufficient credits for this ship class.");
+    }
+  };
+
   const setDestination = (planetId: string) => {
     setGameState(prev => ({
       ...prev,
@@ -239,6 +268,8 @@ const App: React.FC = () => {
 
   const selectedPlanet = selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null;
   const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
+
+  const currentCredits = gameState.playerCredits[gameState.activePlayer] || 0;
 
   const humanPlayers = Array.from({length: gameState.playerCount})
     .map((_, i) => `P${i+1}` as Owner)
@@ -275,7 +306,7 @@ const App: React.FC = () => {
         <div className="flex items-center gap-6">
           <div className="text-right hidden sm:block">
             <div className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Bank</div>
-            <div className="text-xl font-bold text-amber-400">¤{gameState.playerCredits[gameState.activePlayer]?.toLocaleString()}</div>
+            <div className="text-xl font-bold text-amber-400">¤{currentCredits.toLocaleString()}</div>
           </div>
           <button 
             onClick={() => setIsHostDashboardOpen(true)}
@@ -300,7 +331,7 @@ const App: React.FC = () => {
         />
 
         {selectedPlanet && (
-          <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300 max-h-[calc(100%-3rem)] overflow-y-auto">
              <div className="flex justify-between items-start mb-4">
                 <div>
                   <h2 className="text-2xl font-bold">{selectedPlanet.name}</h2>
@@ -310,26 +341,72 @@ const App: React.FC = () => {
              </div>
 
              {selectedPlanet.owner === gameState.activePlayer ? (
-               <div className="grid grid-cols-2 gap-3 mb-6">
-                  <button onClick={() => buildAction('MINE')} className="flex flex-col items-center justify-center p-4 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors">
-                    <span className="text-2xl mb-1">🏗️</span>
-                    <span className="text-[10px] font-bold uppercase">Build Mine</span>
-                    <span className="text-[10px] text-amber-400">¤100</span>
-                  </button>
-                  <button onClick={() => buildAction('FACTORY')} className="flex flex-col items-center justify-center p-4 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors">
-                    <span className="text-2xl mb-1">🏭</span>
-                    <span className="text-[10px] font-bold uppercase">Factory</span>
-                    <span className="text-[10px] text-amber-400">¤100</span>
-                  </button>
+               <div className="space-y-6">
+                 <div>
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Planetary Development</h4>
+                    <div className="grid grid-cols-2 gap-3">
+                      <button 
+                        onClick={() => buildAction('MINE')} 
+                        disabled={currentCredits < 100}
+                        className="flex flex-col items-center justify-center p-3 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-30"
+                      >
+                        <span className="text-xl mb-1">🏗️</span>
+                        <span className="text-[10px] font-bold uppercase">Mine</span>
+                        <span className="text-[10px] text-amber-400">¤100</span>
+                      </button>
+                      <button 
+                        onClick={() => buildAction('FACTORY')} 
+                        disabled={currentCredits < 100}
+                        className="flex flex-col items-center justify-center p-3 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-30"
+                      >
+                        <span className="text-xl mb-1">🏭</span>
+                        <span className="text-[10px] font-bold uppercase">Factory</span>
+                        <span className="text-[10px] text-amber-400">¤100</span>
+                      </button>
+                    </div>
+                 </div>
+
+                 <div>
+                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3">Orbital Shipyard</h4>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button 
+                        onClick={() => buildShip('SCOUT')} 
+                        disabled={currentCredits < SHIP_COSTS.SCOUT}
+                        className="flex flex-col items-center justify-center p-2 bg-slate-900/50 rounded-xl hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-30"
+                      >
+                        <span className="text-lg mb-1">🚀</span>
+                        <span className="text-[8px] font-bold uppercase">Scout</span>
+                        <span className="text-[8px] text-amber-400">¤200</span>
+                      </button>
+                      <button 
+                        onClick={() => buildShip('FREIGHTER')} 
+                        disabled={currentCredits < SHIP_COSTS.FREIGHTER}
+                        className="flex flex-col items-center justify-center p-2 bg-slate-900/50 rounded-xl hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-30"
+                      >
+                        <span className="text-lg mb-1">📦</span>
+                        <span className="text-[8px] font-bold uppercase">Freight</span>
+                        <span className="text-[8px] text-amber-400">¤400</span>
+                      </button>
+                      <button 
+                        onClick={() => buildShip('WARSHIP')} 
+                        disabled={currentCredits < SHIP_COSTS.WARSHIP}
+                        className="flex flex-col items-center justify-center p-2 bg-slate-900/50 rounded-xl hover:bg-white/5 border border-white/5 transition-colors disabled:opacity-30"
+                      >
+                        <span className="text-lg mb-1">⚔️</span>
+                        <span className="text-[8px] font-bold uppercase">Warship</span>
+                        <span className="text-[8px] text-amber-400">¤800</span>
+                      </button>
+                    </div>
+                 </div>
                </div>
              ) : (
-               <div className="bg-slate-900/50 p-4 rounded-2xl mb-6 text-center">
-                  <p className="text-xs text-slate-400 italic">This planet is controlled by {selectedPlanet.owner}.</p>
+               <div className="bg-slate-900/50 p-4 rounded-2xl mb-6 text-center border border-white/5">
+                  <p className="text-xs text-slate-400 italic">This sector is controlled by {selectedPlanet.owner}.</p>
                </div>
              )}
 
              {selectedShip && selectedShip.owner === gameState.activePlayer && selectedShip.currentPlanetId !== selectedPlanet.id && (
-                <button onClick={() => setDestination(selectedPlanet.id)} className="w-full py-4 bg-cyan-600 rounded-2xl font-bold text-sm shadow-xl shadow-cyan-900/30 active:scale-95 transition-all">
+                <button onClick={() => setDestination(selectedPlanet.id)} className="w-full mt-6 py-4 bg-cyan-600 rounded-2xl font-bold text-sm shadow-xl shadow-cyan-900/30 active:scale-95 transition-all">
                   🚀 SEND FLEET HERE
                 </button>
              )}
@@ -355,76 +432,6 @@ const App: React.FC = () => {
            </button>
         </div>
       </main>
-
-      {isHostDashboardOpen && (
-        <div className="fixed inset-0 z-[100] flex justify-end">
-          <div className="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" onClick={() => setIsHostDashboardOpen(false)} />
-          <div className="relative w-full max-w-sm h-full glass-card border-l border-white/10 p-8 flex flex-col animate-in slide-in-from-right duration-300 overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-               <h2 className="text-2xl font-bold">Command Center</h2>
-               <button onClick={() => setIsHostDashboardOpen(false)} className="text-slate-500 text-xl">✕</button>
-            </div>
-
-            <div className="mb-8 p-5 bg-cyan-950/20 border border-cyan-500/20 rounded-3xl">
-               <h3 className="text-[10px] font-bold text-cyan-400 uppercase tracking-widest mb-3 text-center">Galaxy Management</h3>
-               <div className="flex gap-2">
-                 <button 
-                    onClick={inviteAllies} 
-                    className="flex-1 py-3 bg-cyan-600/10 hover:bg-cyan-600/20 text-cyan-400 border border-cyan-600/30 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-2"
-                 >
-                   🤝 Invite Allies
-                 </button>
-                 <button 
-                    onClick={() => setIsNewGameModalOpen(true)} 
-                    className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest"
-                 >
-                   Reset Mission
-                 </button>
-               </div>
-            </div>
-
-            <div className="flex-1 space-y-2 mb-8">
-              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4">Commander Readiness</div>
-              {Array.from({length: gameState.playerCount}).map((_, i) => {
-                const pId = `P${i+1}` as Owner;
-                const isAi = gameState.aiPlayers.includes(pId);
-                const isReady = gameState.readyPlayers.includes(pId) || isAi;
-                return (
-                  <div key={pId} className="flex items-center justify-between p-3 bg-slate-900/50 rounded-xl border border-white/5">
-                    <div className="flex items-center gap-3">
-                      <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: PLAYER_COLORS[pId] }} />
-                      <span className="font-bold text-xs">P{i+1} {isAi ? '🤖' : ''}</span>
-                    </div>
-                    {isReady ? (
-                      <span className="text-emerald-400 text-[10px] font-bold">✅ READY</span>
-                    ) : (
-                      <span className="text-slate-600 text-[10px] font-bold italic">WAITING</span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div className="space-y-3">
-               <button onClick={syncFromClipboard} className="w-full py-4 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-600/50 rounded-2xl font-bold text-sm transition-all active:scale-95 flex items-center justify-center gap-2">
-                 📥 Sync Moves
-               </button>
-               <button 
-                  onClick={processGlobalTurn} 
-                  disabled={!canStartTurn || isProcessing}
-                  className="w-full py-5 bg-cyan-600 disabled:opacity-30 disabled:grayscale rounded-2xl font-bold text-base shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center justify-center gap-3"
-               >
-                 {isProcessing ? (
-                   <>
-                     <span className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                     CALCULATING...
-                   </>
-                 ) : "🚀 START NEW TURN"}
-               </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       <footer className="h-24 glass-card border-t-white/5 flex items-center justify-between px-6 md:px-10">
         <div className="flex gap-2 md:gap-3 flex-wrap max-w-[70%]">
