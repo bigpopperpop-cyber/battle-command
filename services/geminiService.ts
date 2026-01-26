@@ -1,7 +1,9 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameState, Owner } from "../types";
 
 export const getAdvisorFeedback = async (gameState: GameState, userPrompt: string) => {
+  // Fix: Initializing GoogleGenAI inside the function to ensure the most current environment configuration is used.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-3-flash-preview";
   
@@ -33,6 +35,7 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
         temperature: 0.8,
       },
     });
+    // Fix: Access the .text property directly as per Gemini API guidelines.
     return response.text || "I'm having a little trouble with the subspace relay, but you're doing a great job!";
   } catch (error) {
     console.error("Advisor Error:", error);
@@ -41,6 +44,7 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
 };
 
 export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
+  // Fix: Initializing GoogleGenAI inside the function to ensure the latest API key from the environment is utilized.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   // Using gemini-3-pro-preview for complex strategic decision making.
   const model = "gemini-3-pro-preview";
@@ -103,10 +107,12 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
       }
     });
 
-    const jsonText = response.text;
-    if (!jsonText) return { shipOrders: [], planetOrders: [] };
-    const cleaned = jsonText.replace(/^```json\s*|```\s*$/g, '').trim();
-    return JSON.parse(cleaned);
+    // Fix: Using response.text.trim() for JSON content extraction when responseMimeType is application/json.
+    const jsonStr = response.text?.trim();
+    if (!jsonStr) return { shipOrders: [], planetOrders: [] };
+    
+    // When application/json is specified, the output is raw JSON without markdown blocks.
+    return JSON.parse(jsonStr);
   } catch (error) {
     console.error("AI Decision Error:", error);
     return { shipOrders: [], planetOrders: [] };

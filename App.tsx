@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS } from './gameLogic';
@@ -6,6 +7,7 @@ import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal from './components/HelpModal';
 import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
+import IngestModal from './components/IngestModal';
 import { getAiMoves } from './services/geminiService';
 
 const App: React.FC = () => {
@@ -16,11 +18,11 @@ const App: React.FC = () => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [shareUrl, setShareUrl] = useState('');
   const [pendingJoin, setPendingJoin] = useState<GameState | null>(null);
 
-  // Handle joining via Link
   useEffect(() => {
     const hash = window.location.hash;
     if (hash.startsWith('#join=')) {
@@ -28,11 +30,9 @@ const App: React.FC = () => {
         const dataStr = hash.substring(6);
         const compact = JSON.parse(atob(dataStr));
         const baseState = generateInitialState(compact.pc, compact.ai.length, compact.sd, compact.nm);
-        
         baseState.round = compact.rd;
         baseState.playerCredits = compact.cr;
         baseState.aiPlayers = compact.ai;
-        
         compact.ps.forEach((pState: any, i: number) => {
           if (baseState.planets[i]) {
             baseState.planets[i].owner = pState[0];
@@ -40,13 +40,11 @@ const App: React.FC = () => {
             baseState.planets[i].factories = pState[2];
           }
         });
-
         baseState.ships = compact.ss.map((s: any) => ({
           id: s.id, name: s.n, type: s.t, owner: s.o, x: s.x, y: s.y,
           status: s.st, targetPlanetId: s.tp, currentPlanetId: s.cp,
           cargo: 0, maxCargo: 100, hp: 100, maxHp: 100
         }));
-
         setPendingJoin(baseState);
         window.history.replaceState(null, "", window.location.pathname);
       } catch (e) {
@@ -75,6 +73,57 @@ const App: React.FC = () => {
       }))
     };
     return btoa(JSON.stringify(compact));
+  };
+
+  // Merge external player orders into Host state
+  const handleIngest = (rawCode: string) => {
+    const code = rawCode.replace('COMMAND_DATA:', '').trim();
+    const externalState = JSON.parse(atob(code));
+    
+    // Determine who sent this by looking at their "activePlayer" slot (not in compact yet, so we assume they shared their modified state)
+    // For this version, we find all ships/planets owned by a specific non-P1 player and merge them.
+    setGameState(current => {
+      const nextPlanets = [...current.planets];
+      const nextShips = [...current.ships];
+      const readyPlayers = new Set(current.readyPlayers);
+
+      // In this simple manual exchange, we merge based on the first non-P1 owner we find in the incoming data
+      const sampleShip = externalState.ss.find((s: any) => s.o !== 'P1' && !current.aiPlayers.includes(s.o));
+      if (!sampleShip) return current;
+      
+      const guestId = sampleShip.o as Owner;
+
+      // Update Guest Ships
+      externalState.ss.forEach((s: any) => {
+        if (s.o === guestId) {
+          const index = nextShips.findIndex(existing => existing.id === s.id);
+          const updated = {
+            id: s.id, name: s.n, type: s.t, owner: s.o, x: s.x, y: s.y,
+            status: s.st, targetPlanetId: s.tp, currentPlanetId: s.cp,
+            cargo: 0, maxCargo: 100, hp: 100, maxHp: 100
+          };
+          if (index !== -1) nextShips[index] = updated; else nextShips.push(updated);
+        }
+      });
+
+      // Update Guest Planets (Buildings)
+      externalState.ps.forEach((pArr: any, i: number) => {
+        if (pArr[0] === guestId) {
+          nextPlanets[i].mines = pArr[1];
+          nextPlanets[i].factories = pArr[2];
+        }
+      });
+
+      readyPlayers.add(guestId);
+
+      return {
+        ...current,
+        planets: nextPlanets,
+        ships: nextShips,
+        readyPlayers: Array.from(readyPlayers),
+        logs: [`📡 Ingested Tactical Data from ${current.playerNames[guestId]}`, ...current.logs].slice(0, 15)
+      };
+    });
   };
 
   const shareTurn = async () => {
@@ -181,21 +230,6 @@ const App: React.FC = () => {
     }
   };
 
-  const buildShip = (type: ShipType) => {
-    const planet = gameState.planets.find(p => p.id === selectedId);
-    const cost = SHIP_COSTS[type];
-    const myName = gameState.playerNames[gameState.activePlayer];
-    if (planet && gameState.playerCredits[gameState.activePlayer] >= cost) {
-      const newShip: Ship = { id: `s-${gameState.activePlayer}-${Date.now()}`, name: `${myName} ${type} ${gameState.ships.length + 1}`, type, owner: gameState.activePlayer, x: planet.x, y: planet.y, currentPlanetId: planet.id, cargo: 0, maxCargo: 100, hp: 100, maxHp: 100, status: 'ORBITING' };
-      setGameState(prev => ({
-        ...prev,
-        playerCredits: { ...prev.playerCredits, [prev.activePlayer]: prev.playerCredits[prev.activePlayer] - cost },
-        ships: [...prev.ships, newShip],
-        logs: [`🛠️ shipyard at ${planet.name} launched a ${type}.`, ...prev.logs].slice(0, 15)
-      }));
-    } else { alert("Insufficient Credits"); }
-  };
-
   const setDestination = (planetId: string) => {
     setGameState(prev => ({
       ...prev,
@@ -208,11 +242,7 @@ const App: React.FC = () => {
   const selectedShip = selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null;
   const currentCredits = gameState.playerCredits[gameState.activePlayer] || 0;
   const currentPlayerName = gameState.playerNames[gameState.activePlayer];
-
-  // Logic to find the home planet for the anchored tutorial
-  const homePlanetId = gameState.round === 1 && !selectedId 
-    ? gameState.planets.find(p => p.owner === gameState.activePlayer)?.id 
-    : null;
+  const homePlanetId = gameState.round === 1 && !selectedId ? gameState.planets.find(p => p.owner === gameState.activePlayer)?.id : null;
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
@@ -254,18 +284,10 @@ const App: React.FC = () => {
         <div className="flex items-center gap-4">
           <button onClick={() => setIsNewGameModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700" title="New Mission">🛰️</button>
           <button onClick={inviteAllies} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-cyan-500/30" title="Recruit Allies">📢</button>
+          <button onClick={() => setIsIngestModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/30" title="Receive Feed">📡</button>
           <div className="flex flex-col">
             <span className="text-[10px] font-black tracking-[0.2em] text-cyan-400 uppercase leading-none mb-1">Stellar</span>
             <span className="text-xl font-bold tracking-tight italic leading-none">COMMANDER</span>
-          </div>
-          <div className="h-8 w-px bg-white/10 mx-2" />
-          <div className="flex items-center gap-4">
-             <div className="text-xs text-slate-500 font-bold uppercase tracking-tighter">Turn {gameState.round}</div>
-             <div className="px-4 py-1.5 rounded-full text-[10px] font-bold border-2 flex flex-col transition-all max-w-[150px]" 
-                  style={{ borderColor: PLAYER_COLORS[gameState.activePlayer], color: PLAYER_COLORS[gameState.activePlayer], boxShadow: `0 0 15px ${PLAYER_COLORS[gameState.activePlayer]}44` }}>
-               <span className="text-[8px] opacity-60 uppercase tracking-widest">{gameState.activePlayer}</span>
-               <span className="truncate">{currentPlayerName}</span>
-             </div>
           </div>
         </div>
         <div className="flex items-center gap-6">
@@ -280,14 +302,7 @@ const App: React.FC = () => {
       </header>
 
       <main className="flex-1 relative">
-        <MapView 
-          planets={gameState.planets} 
-          ships={gameState.ships} 
-          selectedId={selectedId} 
-          tutorialTargetId={homePlanetId}
-          onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }} 
-        />
-        
+        <MapView planets={gameState.planets} ships={gameState.ships} selectedId={selectedId} tutorialTargetId={homePlanetId} onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }} />
         {selectedPlanet && (
           <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300 max-h-[calc(100%-3rem)] overflow-y-auto">
              <div className="flex justify-between items-start mb-4">
@@ -330,29 +345,23 @@ const App: React.FC = () => {
           {Array.from({length: gameState.playerCount}).map((_, i) => {
             const pId = `P${i+1}` as Owner;
             const isActive = gameState.activePlayer === pId;
-            const isAi = gameState.aiPlayers.includes(pId);
+            const isReady = gameState.readyPlayers.includes(pId);
             return (
               <button 
                 key={i}
                 onClick={() => setGameState(p => ({...p, activePlayer: pId}))}
-                className={`w-9 h-9 md:w-12 md:h-12 rounded-xl md:rounded-2xl font-black text-[10px] md:text-sm transition-all border-2 flex items-center justify-center relative ${isActive ? 'scale-110' : 'opacity-30 hover:opacity-100'}`}
-                style={{ borderColor: PLAYER_COLORS[pId], backgroundColor: isActive ? `${PLAYER_COLORS[pId]}22` : 'transparent', color: PLAYER_COLORS[pId], boxShadow: isActive ? `0 0-15px ${PLAYER_COLORS[pId]}33` : 'none' }}
-                title={gameState.playerNames[pId]}
+                className={`w-12 h-12 rounded-2xl font-black text-sm transition-all border-2 flex items-center justify-center relative ${isActive ? 'scale-110' : 'opacity-30 hover:opacity-100'}`}
+                style={{ borderColor: PLAYER_COLORS[pId], backgroundColor: isActive ? `${PLAYER_COLORS[pId]}22` : 'transparent', color: PLAYER_COLORS[pId] }}
               >
-                {pId}{isAi && <span className="absolute -top-1 -right-1 text-[8px]">🤖</span>}
+                {pId}
+                {isReady && <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-900 animate-pulse" />}
               </button>
             );
           })}
         </div>
-        <div className="flex items-center gap-3 md:gap-4">
-          <button 
-            onClick={() => setIsHelpOpen(true)} 
-            className="w-10 h-10 md:w-12 md:h-12 glass-card rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all hover:scale-105"
-          >
-            <span className="text-xl">？</span>
-            <span className="text-[6px] font-black uppercase tracking-tighter">Manual</span>
-          </button>
-          <button onClick={() => setIsAdvisorOpen(true)} className="w-14 h-14 md:w-16 md:h-16 bg-cyan-500 rounded-full flex items-center justify-center text-3xl shadow-2xl shadow-cyan-500/30 hover:scale-110 transition-transform active:rotate-12">❂</button>
+        <div className="flex items-center gap-4">
+          <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 glass-card rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all"><span className="text-xl">？</span></button>
+          <button onClick={() => setIsAdvisorOpen(true)} className="w-16 h-16 bg-cyan-500 rounded-full flex items-center justify-center text-3xl shadow-2xl shadow-cyan-500/30 hover:scale-110 transition-transform active:rotate-12">❂</button>
         </div>
       </footer>
 
@@ -360,6 +369,7 @@ const App: React.FC = () => {
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
       <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n) => { setGameState(generateInitialState(p, a, undefined, n)); setIsNewGameModalOpen(false); }} />
       <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} joinUrl={shareUrl} />
+      <IngestModal isOpen={isIngestModalOpen} onClose={() => setIsIngestModalOpen(false)} onIngest={handleIngest} readyPlayers={gameState.readyPlayers} />
     </div>
   );
 };
