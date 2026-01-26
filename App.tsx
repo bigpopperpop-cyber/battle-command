@@ -6,6 +6,7 @@ import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal from './components/HelpModal';
 import NewGameModal from './components/NewGameModal';
+import InviteModal from './components/InviteModal';
 
 const App: React.FC = () => {
   const [gameState, setGameState] = useState<GameState>(() => generateInitialState(8));
@@ -15,6 +16,8 @@ const App: React.FC = () => {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isHostDashboardOpen, setIsHostDashboardOpen] = useState(false);
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [shareUrl, setShareUrl] = useState('');
 
   // Auto-load galaxy if joined via link
   useEffect(() => {
@@ -53,24 +56,12 @@ const App: React.FC = () => {
     }
   };
 
-  // 2. INVITE ALLIES (Host Side - Send Map Link)
-  const inviteAllies = async () => {
+  // 2. INVITE ALLIES (Host Side - Prepare Link/QR)
+  const inviteAllies = () => {
     const data = btoa(JSON.stringify(gameState));
     const joinUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
-    
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Join my Galaxy in Stellar Commander',
-          text: `I'm hosting a galaxy for ${gameState.playerCount} players. Tap the link to join the mission!`,
-          url: joinUrl
-        });
-      } catch (err) {
-        copyToClipboard(joinUrl, "Mission Link copied! Send it to your friends to let them join.");
-      }
-    } else {
-      copyToClipboard(joinUrl, "Mission Link copied! Send it to your friends to let them join.");
-    }
+    setShareUrl(joinUrl);
+    setIsInviteModalOpen(true);
   };
 
   const copyToClipboard = (text: string, alertMsg: string) => {
@@ -438,6 +429,11 @@ const App: React.FC = () => {
         isOpen={isNewGameModalOpen} 
         onClose={() => setIsNewGameModalOpen(false)} 
         onConfirm={handleStartNewGame} 
+      />
+      <InviteModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        joinUrl={shareUrl}
       />
     </div>
   );
