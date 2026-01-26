@@ -53,10 +53,10 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
   Your Planets: ${JSON.stringify(myPlanets.map(p => ({id: p.id, mines: p.mines, factories: p.factories})))}
 
   Decide your moves for this turn. 
-  1. For each IDLE/ORBITING ship, give it a targetPlanetId.
+  1. For each IDLE/ORBITING ship, give it a targetPlanetId from the Nearby Neutral Planets.
   2. For each planet, decide if you want to build a 'MINE' or 'FACTORY' (Cost: 100).
   
-  Return JSON.`;
+  Return ONLY a raw JSON object. Do not include markdown or extra text.`;
 
   try {
     const response = await ai.models.generateContent({
@@ -97,8 +97,8 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
     const jsonText = response.text;
     if (!jsonText) return { shipOrders: [], planetOrders: [] };
     
-    // Robust cleaning in case model includes markdown markers
-    const cleaned = jsonText.replace(/```json/g, '').replace(/```/g, '').trim();
+    // Use regex to strip any markdown code blocks if the model still provides them
+    const cleaned = jsonText.replace(/^```json\s*|```\s*$/g, '').trim();
     return JSON.parse(cleaned);
   } catch (error) {
     console.error("AI Decision Error:", error);
