@@ -1,5 +1,4 @@
-
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Planet, Ship } from '../types';
 import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
 
@@ -20,6 +19,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   const handleStart = (clientX: number, clientY: number) => {
     setIsDragging(true);
     hasMovedRef.current = false;
+    // Store current mouse position relative to current offset
     dragStartRef.current = { x: clientX - offset.x, y: clientY - offset.y };
   };
 
@@ -32,7 +32,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     const dx = Math.abs(newX - offset.x);
     const dy = Math.abs(newY - offset.y);
     
-    if (dx > 3 || dy > 3) {
+    // Threshold to prevent accidental "panning" during a simple click/tap
+    if (dx > 4 || dy > 4) {
       hasMovedRef.current = true;
     }
     
@@ -43,8 +44,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     setIsDragging(false);
   };
 
-  // Select logic that ignores "clicks" that were actually drags
   const handleItemClick = (e: React.MouseEvent | React.TouchEvent, id: string, type: 'PLANET' | 'SHIP') => {
+    // Only select if the interaction wasn't a drag/pan
     if (!hasMovedRef.current) {
       e.stopPropagation();
       onSelect(id, type);
@@ -60,11 +61,11 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
       onMouseLeave={handleEnd}
       onTouchStart={(e) => {
         const touch = e.touches[0];
-        handleStart(touch.clientX, touch.clientY);
+        if (touch) handleStart(touch.clientX, touch.clientY);
       }}
       onTouchMove={(e) => {
         const touch = e.touches[0];
-        handleMove(touch.clientX, touch.clientY);
+        if (touch) handleMove(touch.clientX, touch.clientY);
       }}
       onTouchEnd={handleEnd}
     >
