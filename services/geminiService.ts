@@ -1,10 +1,12 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { GameState, Owner } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// Accessing process.env via any to prevent tsc from failing during build
+// Vite will replace this string during the build process
+const getApiKey = () => (process as any).env.API_KEY || '';
 
 export const getAdvisorFeedback = async (gameState: GameState, userPrompt: string) => {
+  const ai = new GoogleGenAI({ apiKey: getApiKey() });
   const model = "gemini-3-flash-preview";
   
   const systemPrompt = `You are "Admiral Jarvis", the central advisor for a casual space strategy game.
@@ -36,17 +38,18 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
     });
     return response.text || "I'm having a little trouble with the subspace relay, but you're doing a great job!";
   } catch (error) {
+    console.error("Advisor Error:", error);
     return "The stars are beautiful tonight, aren't they? (Communications are temporarily offline, but I'm still here for you!)";
   }
 };
 
 export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
+  const ai = new GoogleGenAI({ apiKey: getApiKey() });
   const model = "gemini-3-flash-preview";
   
   const myPlanets = gameState.planets.filter(p => p.owner === aiPlayerId);
   const myShips = gameState.ships.filter(s => s.owner === aiPlayerId);
   const neutralPlanets = gameState.planets.filter(p => p.owner === 'NEUTRAL');
-  const enemyPlanets = gameState.planets.filter(p => p.owner !== 'NEUTRAL' && p.owner !== aiPlayerId);
 
   const prompt = `You are an AI player controlling ${aiPlayerId}.
   Credits: ${gameState.playerCredits[aiPlayerId]}
@@ -97,7 +100,7 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
       }
     });
 
-    return JSON.parse(response.text);
+    return JSON.parse(response.text || '{}');
   } catch (error) {
     console.error("AI Decision Error:", error);
     return { shipOrders: [], planetOrders: [] };

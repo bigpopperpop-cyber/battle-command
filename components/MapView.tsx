@@ -12,40 +12,43 @@ interface MapViewProps {
 const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect }) => {
   const [zoom, setZoom] = useState(0.7);
   const [offset, setOffset] = useState({ x: 50, y: 50 });
-  const [isDragging, setIsDragging] = useState(false);
-  const dragStartRef = useRef({ x: 0, y: 0 });
+  
+  // Ref-based state to handle high-frequency drag events without lag
+  const isDraggingRef = useRef(false);
+  const dragStartPosRef = useRef({ x: 0, y: 0 });
+  const offsetAtStartRef = useRef({ x: 50, y: 50 });
   const hasMovedRef = useRef(false);
 
   const handleStart = (clientX: number, clientY: number) => {
-    setIsDragging(true);
+    isDraggingRef.current = true;
     hasMovedRef.current = false;
-    // Store current mouse position relative to current offset
-    dragStartRef.current = { x: clientX - offset.x, y: clientY - offset.y };
+    dragStartPosRef.current = { x: clientX, y: clientY };
+    offsetAtStartRef.current = { ...offset };
   };
 
   const handleMove = (clientX: number, clientY: number) => {
-    if (!isDragging) return;
+    if (!isDraggingRef.current) return;
     
-    const newX = clientX - dragStartRef.current.x;
-    const newY = clientY - dragStartRef.current.y;
+    const dx = clientX - dragStartPosRef.current.x;
+    const dy = clientY - dragStartPosRef.current.y;
     
-    const dx = Math.abs(newX - offset.x);
-    const dy = Math.abs(newY - offset.y);
-    
-    // Threshold to prevent accidental "panning" during a simple click/tap
-    if (dx > 4 || dy > 4) {
+    // Threshold to distinguish between tap and drag (4 pixels)
+    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) {
       hasMovedRef.current = true;
     }
     
-    setOffset({ x: newX, y: newY });
+    setOffset({
+      x: offsetAtStartRef.current.x + dx,
+      y: offsetAtStartRef.current.y + dy
+    });
   };
 
   const handleEnd = () => {
-    setIsDragging(false);
+    isDraggingRef.current = false;
   };
 
   const handleItemClick = (e: React.MouseEvent | React.TouchEvent, id: string, type: 'PLANET' | 'SHIP') => {
-    // Only select if the interaction wasn't a drag/pan
+    // Prevent selection if the user was actually panning the map
     if (!hasMovedRef.current) {
       e.stopPropagation();
       onSelect(id, type);
@@ -78,6 +81,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           height: `${GRID_SIZE}px`,
         }}
       >
+        {/* Navigation Grid */}
         <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
           backgroundSize: '100px 100px'
