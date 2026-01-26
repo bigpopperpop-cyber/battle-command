@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS } from './gameLogic';
@@ -71,7 +72,6 @@ const App: React.FC = () => {
       cr: state.playerCredits, nm: state.playerNames,
       ps: state.planets.map(p => [p.owner, p.mines, p.factories]),
       ss: state.ships.map(s => ({
-        // Fix: Changed s.n to s.name because the Ship type has a 'name' property.
         id: s.id, n: s.name, t: s.type, o: s.owner, x: Math.round(s.x), y: Math.round(s.y), st: s.status, tp: s.targetPlanetId, cp: s.currentPlanetId
       }))
     };
@@ -281,6 +281,17 @@ const App: React.FC = () => {
 
       <main className="flex-1 relative">
         <MapView planets={gameState.planets} ships={gameState.ships} selectedId={selectedId} onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }} />
+        
+        {/* Tutorial Prompt for Round 1 */}
+        {gameState.round === 1 && !selectedId && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center gap-4 animate-bounce pointer-events-none">
+            <div className="bg-cyan-500 text-white px-6 py-3 rounded-2xl font-bold text-sm shadow-2xl shadow-cyan-500/50">
+              TAP YOUR HOME PLANET TO START
+            </div>
+            <span className="text-4xl">👇</span>
+          </div>
+        )}
+
         {selectedPlanet && (
           <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300 max-h-[calc(100%-3rem)] overflow-y-auto">
              <div className="flex justify-between items-start mb-4">
@@ -338,7 +349,13 @@ const App: React.FC = () => {
           })}
         </div>
         <div className="flex items-center gap-3 md:gap-4">
-          <button onClick={() => setIsHelpOpen(true)} className="w-10 h-10 md:w-12 md:h-12 glass-card rounded-2xl flex items-center justify-center text-slate-400 hover:text-white">？</button>
+          <button 
+            onClick={() => setIsHelpOpen(true)} 
+            className="w-10 h-10 md:w-12 md:h-12 glass-card rounded-2xl flex flex-col items-center justify-center text-slate-400 hover:text-white transition-all hover:scale-105"
+          >
+            <span className="text-xl">？</span>
+            <span className="text-[6px] font-black uppercase tracking-tighter">Manual</span>
+          </button>
           <button onClick={() => setIsAdvisorOpen(true)} className="w-14 h-14 md:w-16 md:h-16 bg-cyan-500 rounded-full flex items-center justify-center text-3xl shadow-2xl shadow-cyan-500/30 hover:scale-110 transition-transform active:rotate-12">❂</button>
         </div>
       </footer>
