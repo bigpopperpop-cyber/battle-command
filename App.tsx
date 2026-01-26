@@ -33,6 +33,7 @@ const App: React.FC = () => {
   const [showMoveQr, setShowMoveQr] = useState(false);
   const [showPostTurnSync, setShowPostTurnSync] = useState(false);
   const [lastSyncUrl, setLastSyncUrl] = useState('');
+  const [copyStatus, setCopyStatus] = useState<string | null>(null);
 
   // Persistence Hook
   useEffect(() => {
@@ -173,9 +174,13 @@ const App: React.FC = () => {
           url: shareUrlWithMoves 
         });
       } catch (err) { 
+        navigator.clipboard.writeText(shareUrlWithMoves);
+        setCopyStatus("Link Copied! Send it to the Host.");
         setShowMoveQr(true); 
       }
     } else {
+      navigator.clipboard.writeText(shareUrlWithMoves);
+      setCopyStatus("Link Copied! Send it to the Host.");
       setShowMoveQr(true);
     }
   };
@@ -257,24 +262,26 @@ const App: React.FC = () => {
     setGameState(nextRoundState);
     setIsProcessing(false);
 
-    // Prepare sync URL from the *freshly calculated* state
     const data = getShareableData(nextRoundState);
     const syncUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
     setLastSyncUrl(syncUrl);
     setShowPostTurnSync(true);
 
-    // Auto-trigger share if available
     if (navigator.share) {
       try {
         await navigator.share({ 
           title: `GALAXY UPDATE: Round ${nextRoundState.round}`, 
-          text: `Combat results for Round ${nextRoundState.round - 1} are processed! Tap to update your map.`, 
+          text: `The combat results are in! Everyone tap this to update your map to Round ${nextRoundState.round}.`, 
           url: syncUrl 
         });
-        setShowPostTurnSync(false); // Only close if native share succeeded
+        setShowPostTurnSync(false);
       } catch (err) {
-        console.log("Native share cancelled or failed, showing sync modal.");
+        navigator.clipboard.writeText(syncUrl);
+        setCopyStatus("Sync Link Copied! Send it to the others.");
       }
+    } else {
+      navigator.clipboard.writeText(syncUrl);
+      setCopyStatus("Sync Link Copied! Send it to the others.");
     }
   };
 
@@ -322,6 +329,21 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
+      {/* PERSISTENT STATUS HEADER (FOR WIFE/EASE OF USE) */}
+      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[50] w-full px-6 pointer-events-none">
+         <div className="max-w-md mx-auto bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-full py-2 px-4 flex items-center justify-between shadow-2xl pointer-events-auto">
+            <div className="flex items-center gap-2">
+               <div className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+               <span className="text-[10px] font-black uppercase tracking-widest text-white/70">
+                 {gameState.activePlayer}: {gameState.playerCredits[gameState.activePlayer]} Credits
+               </span>
+            </div>
+            <div className="text-[10px] font-black uppercase tracking-widest text-cyan-400">
+              Round {gameState.round}
+            </div>
+         </div>
+      </div>
+
       {/* PROCESSING OVERLAY */}
       {isProcessing && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
@@ -344,18 +366,18 @@ const App: React.FC = () => {
              </div>
              <h2 className="text-3xl font-bold mb-2 italic">ROUND {gameState.round - 1} COMPLETE</h2>
              <p className="text-[10px] text-emerald-400 font-black uppercase tracking-[0.3em] mb-8">Broadcast New Coordinates</p>
-             <p className="text-sm text-slate-400 mb-8 leading-relaxed">The turn has been processed. Share this updated map link with all allied commanders to keep everyone in sync.</p>
+             <p className="text-sm text-slate-400 mb-8 leading-relaxed">Map updated! Send this to your players so their devices know what happened.</p>
              <div className="space-y-3">
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(lastSyncUrl);
-                    alert("Sync Link Copied! Send this to your players.");
+                    setCopyStatus("Copied! Paste in your chat.");
                   }}
                   className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-sm shadow-xl shadow-emerald-900/40 transition-all active:scale-95"
                 >
-                  📋 Copy Sync Link
+                  {copyStatus || "📋 Copy & Send to Group"}
                 </button>
-                <button onClick={() => setShowPostTurnSync(false)} className="w-full py-3 text-slate-500 hover:text-slate-300 text-xs font-bold uppercase tracking-widest">
+                <button onClick={() => { setShowPostTurnSync(false); setCopyStatus(null); }} className="w-full py-3 text-slate-500 hover:text-slate-300 text-xs font-bold uppercase tracking-widest">
                   Close & View Map
                 </button>
              </div>
@@ -397,18 +419,16 @@ const App: React.FC = () => {
       )}
 
       {showMoveQr && (
-        <div className="fixed inset-0 z-[180] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl" onClick={() => setShowMoveQr(false)}>
+        <div className="fixed inset-0 z-[180] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl" onClick={() => { setShowMoveQr(false); setCopyStatus(null); }}>
           <div className="max-w-md w-full glass-card rounded-[3rem] p-10 text-center border-cyan-500/30 animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
-            <h2 className="text-3xl font-bold mb-2 italic">TACTICAL LINK</h2>
-            <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-8">Ready for Local Scan</p>
-            <div className="p-4 bg-white rounded-3xl mb-8 flex items-center justify-center shadow-[0_0_50px_rgba(255,255,255,0.2)]">
-               <img 
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=000000&bgcolor=ffffff&margin=20&ecc=L&data=${encodeURIComponent(`COMMAND_DATA:${getShareableData(gameState)}`)}`} 
-                alt="Move Code" 
-                className="w-64 h-64"
-               />
+            <h2 className="text-3xl font-bold mb-2 italic">SENDING MOVES</h2>
+            <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-8">{copyStatus || "Ready to Transmit"}</p>
+            <div className="p-6 bg-slate-900/50 border border-white/10 rounded-3xl mb-8">
+               <p className="text-sm text-slate-300 leading-relaxed">
+                 {copyStatus ? "I've copied your orders to your clipboard. Just open your messages and paste them to the Host!" : "Tap the button below to share your orders."}
+               </p>
             </div>
-            <button onClick={() => setShowMoveQr(false)} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-bold text-sm">Close Link</button>
+            <button onClick={() => setShowMoveQr(false)} className="w-full py-4 bg-cyan-600 text-white rounded-2xl font-bold text-sm shadow-xl shadow-cyan-900/40">Got it!</button>
           </div>
         </div>
       )}
@@ -418,14 +438,14 @@ const App: React.FC = () => {
           <button onClick={() => setIsNewGameModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700" title="New Game">🛰️</button>
           <button onClick={() => setIsInviteModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-cyan-500/30" title="Invite">📢</button>
           <button onClick={() => setIsIngestModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/30" title="Manual Ingest">📡</button>
-          <div className="flex flex-col">
+          <div className="flex flex-col hidden sm:flex">
             <span className="text-[10px] font-black tracking-[0.2em] text-cyan-400 uppercase leading-none mb-1">Stellar</span>
             <span className="text-xl font-bold tracking-tight italic leading-none">COMMANDER</span>
           </div>
         </div>
         <div className="flex items-center gap-6">
-          <button onClick={processGlobalTurn} disabled={isProcessing} className="bg-cyan-600 hover:bg-cyan-500 px-6 py-2.5 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-cyan-900/40 disabled:opacity-50">
-             {isProcessing ? '⚙️ Processing...' : '📡 Execute Orders'}
+          <button onClick={processGlobalTurn} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/40 disabled:opacity-50 border-b-4 border-emerald-800 active:border-b-0 active:translate-y-1">
+             {isProcessing ? '⚙️ Processing...' : '📡 Execute Turn'}
           </button>
         </div>
       </header>
@@ -433,7 +453,7 @@ const App: React.FC = () => {
       <main className="flex-1 relative">
         <MapView planets={gameState.planets} ships={gameState.ships} selectedId={selectedId} tutorialTargetId={homePlanetId} onSelect={(id, type) => { setSelectedId(id); setSelectedType(type); }} />
         {selectedPlanet && (
-          <div className="absolute top-6 left-6 w-80 glass-card rounded-[2rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300">
+          <div className="absolute top-24 left-6 w-80 glass-card rounded-[2.5rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300">
              <div className="flex justify-between items-start mb-4">
                 <div><h2 className="text-2xl font-bold">{selectedPlanet.name}</h2><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sector {selectedPlanet.id}</span></div>
                 <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white">✕</button>
@@ -470,9 +490,15 @@ const App: React.FC = () => {
           </div>
         )}
         
-        <div className="absolute bottom-6 right-6 flex items-center gap-3">
-           <button onClick={shareTurn} disabled={gameState.activePlayer === 'P1' && !gameState.readyPlayers.length && gameState.round > 1} className="bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 px-8 py-4 rounded-3xl font-bold text-sm shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center gap-2">
-             📤 Send Moves
+        <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3">
+           <div className="bg-slate-950/80 px-4 py-2 rounded-full border border-white/10 text-[9px] font-black uppercase tracking-widest text-cyan-400 mb-2 animate-pulse">
+              {gameState.readyPlayers.length} / {gameState.playerCount - gameState.aiPlayers.length} Commanders Ready
+           </div>
+           <button 
+             onClick={shareTurn} 
+             className="bg-cyan-600 hover:bg-cyan-500 px-10 py-5 rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-2xl shadow-cyan-900/40 transition-all active:scale-90 border-b-4 border-cyan-800 active:border-b-0 flex items-center gap-3"
+           >
+             📤 {gameState.activePlayer === 'P1' ? 'SYNC GALAXY' : 'SEND MOVES'}
            </button>
         </div>
       </main>
