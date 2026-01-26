@@ -29,17 +29,16 @@ const App: React.FC = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [shareUrl, setShareUrl] = useState('');
   const [pendingJoin, setPendingJoin] = useState<GameState | null>(null);
   const [showMoveQr, setShowMoveQr] = useState(false);
-  const [roundJustProcessed, setRoundJustProcessed] = useState(false);
+  const [showPostTurnSync, setShowPostTurnSync] = useState(false);
+  const [lastSyncUrl, setLastSyncUrl] = useState('');
 
   // Persistence Hook
   useEffect(() => {
     localStorage.setItem(SAVE_KEY, JSON.stringify(gameState));
   }, [gameState]);
 
-  // Handle URL Links (Join vs Move vs Sync)
   const handleIngest = useCallback((rawCode: string) => {
     try {
       const code = rawCode.replace('COMMAND_DATA:', '').trim();
@@ -174,29 +173,10 @@ const App: React.FC = () => {
           url: shareUrlWithMoves 
         });
       } catch (err) { 
-        setShowMoveQr(true); // Fallback to QR
+        setShowMoveQr(true); 
       }
     } else {
       setShowMoveQr(true);
-    }
-  };
-
-  const broadcastResults = async () => {
-    const data = getShareableData(gameState);
-    const syncUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
-    
-    if (navigator.share) {
-      try {
-        await navigator.share({ 
-          title: `GALAXY UPDATE: Round ${gameState.round}`, 
-          text: `The combat results for Round ${gameState.round - 1} are in! Tap to sync your map.`, 
-          url: syncUrl 
-        });
-        setRoundJustProcessed(false);
-      } catch (err) { 
-        navigator.clipboard.writeText(syncUrl);
-        alert("Sync Link Copied! Text this to all players.");
-      }
     }
   };
 
@@ -264,12 +244,38 @@ const App: React.FC = () => {
       }
     });
 
-    setGameState(prev => ({
-      ...prev, round: prev.round + 1, planets: nextPlanets, ships: nextShips,
-      playerCredits: nextCredits, logs: [...newLogs, ...prev.logs].slice(0, 15), readyPlayers: [] 
-    }));
+    const nextRoundState: GameState = {
+      ...gameState,
+      round: gameState.round + 1,
+      planets: nextPlanets,
+      ships: nextShips,
+      playerCredits: nextCredits,
+      logs: [...newLogs, ...gameState.logs].slice(0, 15),
+      readyPlayers: [] 
+    };
+
+    setGameState(nextRoundState);
     setIsProcessing(false);
-    setRoundJustProcessed(true);
+
+    // Prepare sync URL from the *freshly calculated* state
+    const data = getShareableData(nextRoundState);
+    const syncUrl = `${window.location.origin}${window.location.pathname}#join=${data}`;
+    setLastSyncUrl(syncUrl);
+    setShowPostTurnSync(true);
+
+    // Auto-trigger share if available
+    if (navigator.share) {
+      try {
+        await navigator.share({ 
+          title: `GALAXY UPDATE: Round ${nextRoundState.round}`, 
+          text: `Combat results for Round ${nextRoundState.round - 1} are processed! Tap to update your map.`, 
+          url: syncUrl 
+        });
+        setShowPostTurnSync(false); // Only close if native share succeeded
+      } catch (err) {
+        console.log("Native share cancelled or failed, showing sync modal.");
+      }
+    }
   };
 
   const buildAction = (type: 'MINE' | 'FACTORY') => {
@@ -316,6 +322,47 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
+      {/* PROCESSING OVERLAY */}
+      {isProcessing && (
+        <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
+           <div className="flex flex-col items-center gap-6">
+              <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin shadow-[0_0_30px_rgba(6,182,212,0.5)]" />
+              <div className="text-center">
+                 <h2 className="text-2xl font-bold italic text-white mb-2">PROCESSING TURN</h2>
+                 <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest animate-pulse">Calculating Subspace Trajectories...</p>
+              </div>
+           </div>
+        </div>
+      )}
+
+      {/* POST-TURN SYNC MODAL */}
+      {showPostTurnSync && (
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl">
+          <div className="max-w-md w-full glass-card rounded-[3rem] p-10 text-center border-emerald-500/30 shadow-[0_0_100px_rgba(16,185,129,0.1)]">
+             <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                <span className="text-4xl">🛰️</span>
+             </div>
+             <h2 className="text-3xl font-bold mb-2 italic">ROUND {gameState.round - 1} COMPLETE</h2>
+             <p className="text-[10px] text-emerald-400 font-black uppercase tracking-[0.3em] mb-8">Broadcast New Coordinates</p>
+             <p className="text-sm text-slate-400 mb-8 leading-relaxed">The turn has been processed. Share this updated map link with all allied commanders to keep everyone in sync.</p>
+             <div className="space-y-3">
+                <button 
+                  onClick={() => {
+                    navigator.clipboard.writeText(lastSyncUrl);
+                    alert("Sync Link Copied! Send this to your players.");
+                  }}
+                  className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-sm shadow-xl shadow-emerald-900/40 transition-all active:scale-95"
+                >
+                  📋 Copy Sync Link
+                </button>
+                <button onClick={() => setShowPostTurnSync(false)} className="w-full py-3 text-slate-500 hover:text-slate-300 text-xs font-bold uppercase tracking-widest">
+                  Close & View Map
+                </button>
+             </div>
+          </div>
+        </div>
+      )}
+
       {pendingJoin && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl">
           <div className="max-w-md w-full glass-card rounded-[3rem] p-10 text-center border-cyan-500/30 animate-in zoom-in-95 duration-500">
@@ -377,15 +424,9 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex items-center gap-6">
-          {roundJustProcessed ? (
-            <button onClick={broadcastResults} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2.5 rounded-2xl font-bold text-sm transition-all animate-pulse shadow-lg shadow-emerald-900/40">
-               🛰️ Broadcast Results
-            </button>
-          ) : (
-            <button onClick={processGlobalTurn} disabled={isProcessing} className="bg-cyan-600 hover:bg-cyan-500 px-6 py-2.5 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-cyan-900/40 disabled:opacity-50">
-               {isProcessing ? '⚙️ Processing...' : '📡 Execute Orders'}
-            </button>
-          )}
+          <button onClick={processGlobalTurn} disabled={isProcessing} className="bg-cyan-600 hover:bg-cyan-500 px-6 py-2.5 rounded-2xl font-bold text-sm transition-all shadow-lg shadow-cyan-900/40 disabled:opacity-50">
+             {isProcessing ? '⚙️ Processing...' : '📡 Execute Orders'}
+          </button>
         </div>
       </header>
 
