@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { Planet, Ship } from '../types';
 import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
@@ -53,6 +54,27 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
     }
   };
 
+  // Helper to calculate ship visual position
+  const getShipVisualPosition = (ship: Ship) => {
+    if (ship.status !== 'ORBITING' || !ship.currentPlanetId) {
+      return { x: ship.x, y: ship.y };
+    }
+
+    // Find all ships orbiting the same planet to space them out
+    const fleetAtPlanet = ships.filter(s => s.currentPlanetId === ship.currentPlanetId && s.status === 'ORBITING');
+    const index = fleetAtPlanet.findIndex(s => s.id === ship.id);
+    const total = fleetAtPlanet.length;
+    
+    // Distance from planet center (orbit radius)
+    const orbitRadius = 45; 
+    const angle = (index * (360 / total)) * (Math.PI / 180);
+    
+    return {
+      x: ship.x + Math.cos(angle) * orbitRadius,
+      y: ship.y + Math.sin(angle) * orbitRadius
+    };
+  };
+
   return (
     <div 
       className="w-full h-full relative overflow-hidden bg-[#020617] cursor-grab active:cursor-grabbing touch-none select-none"
@@ -89,9 +111,15 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
             key={planet.id}
             onMouseDown={(e) => e.stopPropagation()} 
             onClick={(e) => handleItemClick(e, planet.id, 'PLANET')}
-            className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group"
+            className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group z-10"
             style={{ left: planet.x, top: planet.y }}
           >
+            {/* Selection Orbit Path */}
+            {selectedId === planet.id && (
+              <div className="absolute inset-0 w-[90px] h-[90px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10 border-dashed animate-[spin_20s_linear_infinite]" 
+                   style={{ left: '50%', top: '50%' }} />
+            )}
+
             {/* Tutorial resonance ring pulse */}
             {tutorialTargetId === planet.id && (
               <div className="absolute inset-0 w-20 h-20 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-500 animate-ping opacity-30 pointer-events-none" 
@@ -122,23 +150,32 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
           </div>
         ))}
 
-        {ships.map(ship => (
-          <div
-            key={ship.id}
-            onMouseDown={(e) => e.stopPropagation()}
-            onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
-            className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-500"
-            style={{ left: ship.x, top: ship.y }}
-          >
-             <div 
-              className={`w-6 h-6 rotate-45 border-2 transition-all ${selectedId === ship.id ? 'scale-150 border-white shadow-[0_0_20px_#fff]' : 'border-white/20'}`}
-              style={{ 
-                backgroundColor: PLAYER_COLORS[ship.owner],
-                boxShadow: `0 0 15px ${PLAYER_COLORS[ship.owner]}88`
-              }}
-            />
-          </div>
-        ))}
+        {ships.map(ship => {
+          const visualPos = getShipVisualPosition(ship);
+          return (
+            <div
+              key={ship.id}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
+              className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-500 z-20"
+              style={{ left: visualPos.x, top: visualPos.y }}
+            >
+               <div 
+                className={`w-6 h-6 rotate-45 border-2 transition-all ${selectedId === ship.id ? 'scale-150 border-white shadow-[0_0_20px_#fff]' : 'border-white/20'}`}
+                style={{ 
+                  backgroundColor: PLAYER_COLORS[ship.owner],
+                  boxShadow: `0 0 15px ${PLAYER_COLORS[ship.owner]}88`
+                }}
+              />
+              {/* Optional: Ship Label for better identification */}
+              {selectedId === ship.id && (
+                <div className="absolute top-8 left-1/2 -translate-x-1/2 whitespace-nowrap bg-black/80 px-2 py-1 rounded text-[8px] font-bold text-white border border-white/20">
+                  {ship.name}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       <div className="absolute bottom-6 left-6 flex flex-col gap-3 z-30">
