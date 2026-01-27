@@ -183,7 +183,6 @@ const App: React.FC = () => {
     return { income };
   }, [gameState.planets, gameState.activePlayer]);
 
-  // Fix: Added memoized selection helpers to resolve "Cannot find name" errors for selectedPlanet and selectedShip
   const selectedPlanet = useMemo(() => 
     selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null
   , [selectedId, selectedType, gameState.planets]);
@@ -216,9 +215,10 @@ const App: React.FC = () => {
             </div>
          </div>
 
-         <div className="flex items-center gap-3">
-            <button onClick={() => setIsInviteModalOpen(true)} className="w-8 h-8 rounded-lg bg-cyan-600/10 flex items-center justify-center text-xs">🔗</button>
-            <button onClick={() => setIsHelpOpen(true)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs">?</button>
+         <div className="flex items-center gap-2">
+            <button onClick={() => setIsInviteModalOpen(true)} className="w-8 h-8 rounded-lg bg-cyan-600/10 flex items-center justify-center text-xs transition-colors hover:bg-cyan-600/30" title="Invite Empires">🔗</button>
+            <button onClick={() => setIsNewGameModalOpen(true)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs transition-colors hover:bg-white/10" title="New Galaxy">🆕</button>
+            <button onClick={() => setIsHelpOpen(true)} className="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-xs transition-colors hover:bg-white/10" title="Help">?</button>
          </div>
       </div>
 
@@ -374,7 +374,15 @@ const App: React.FC = () => {
       {/* OVERLAYS */}
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-      <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n) => { setGameState(generateInitialState(p, a, undefined, n)); setIsNewGameModalOpen(false); }} />
+      <NewGameModal 
+        isOpen={isNewGameModalOpen} 
+        onClose={() => setIsNewGameModalOpen(false)} 
+        onConfirm={(p, a, n) => { 
+          setGameState(generateInitialState(p, a, undefined, n)); 
+          setIsNewGameModalOpen(false); 
+          setSelectedId(null);
+        }} 
+      />
       <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} joinUrl={`${window.location.origin}${window.location.pathname}#join=${btoa(JSON.stringify({sd: gameState.seed, rd: gameState.round, pc: gameState.playerCount, ai: gameState.aiPlayers, cr: gameState.playerCredits, nm: gameState.playerNames, ps: gameState.planets.map(p => [p.owner, p.mines, p.factories]), ss: gameState.ships.map(s => ({id: s.id, n: s.name, t: s.type, o: s.owner, x: Math.round(s.x), y: Math.round(s.y), st: s.status, tp: s.targetPlanetId, cp: s.currentPlanetId}))}))}`} />
 
       {pendingJoin && (
