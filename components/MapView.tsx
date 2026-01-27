@@ -11,17 +11,25 @@ interface MapViewProps {
 }
 
 const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect }) => {
-  const [zoom, setZoom] = useState(0.6);
-  const [offset, setOffset] = useState({ x: 50, y: 50 });
+  const [zoom, setZoom] = useState(0.5);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
   
   const isDraggingRef = useRef(false);
   const dragStartPosRef = useRef({ x: 0, y: 0 });
   const offsetAtStartRef = useRef({ x: 0, y: 0 });
   const hasMovedRef = useRef(false);
 
-  // Initial camera placement
+  // Initial camera placement (Center on player 1's starting position if possible)
   useEffect(() => {
-    setOffset({ x: window.innerWidth/2 - 300, y: window.innerHeight/2 - 300 });
+    const p1Planet = planets.find(p => p.owner === 'P1');
+    if (p1Planet) {
+       setOffset({ 
+         x: window.innerWidth/2 - p1Planet.x * zoom, 
+         y: window.innerHeight/2 - p1Planet.y * zoom 
+       });
+    } else {
+       setOffset({ x: window.innerWidth/2 - 300, y: window.innerHeight/2 - 300 });
+    }
   }, []);
 
   const handleStart = (clientX: number, clientY: number) => {
@@ -35,7 +43,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     if (!isDraggingRef.current) return;
     const dx = clientX - dragStartPosRef.current.x;
     const dy = clientY - dragStartPosRef.current.y;
-    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) hasMovedRef.current = true;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) hasMovedRef.current = true;
     setOffset({ x: offsetAtStartRef.current.x + dx, y: offsetAtStartRef.current.y + dy });
   };
 
@@ -68,10 +76,10 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           height: `${GRID_SIZE}px`,
         }}
       >
-        {/* Galaxy Grid */}
-        <div className="absolute inset-0 opacity-[0.05]" style={{
+        {/* Deep Space Atmosphere */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{
           backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
-          backgroundSize: '150px 150px'
+          backgroundSize: '200px 200px'
         }} />
 
         {planets.map(planet => (
@@ -82,18 +90,18 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
             style={{ left: planet.x, top: planet.y }}
           >
             {selectedId === planet.id && (
-               <div className="absolute inset-0 w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-500 border-dashed animate-[spin_10s_linear_infinite]" 
+               <div className="absolute inset-0 w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyan-500 border-dashed animate-[spin_15s_linear_infinite]" 
                     style={{ left: '50%', top: '50%' }} />
             )}
             <div 
-              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_30px_rgba(255,255,255,0.4)]' : 'scale-100 opacity-80'}`}
+              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'scale-100 opacity-90'}`}
               style={{ 
                 backgroundColor: PLAYER_COLORS[planet.owner],
-                borderColor: planet.owner !== 'NEUTRAL' ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.1)',
-                boxShadow: `0 0 40px ${PLAYER_COLORS[planet.owner]}44`
+                borderColor: planet.owner !== 'NEUTRAL' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.1)',
+                boxShadow: `0 0 50px ${PLAYER_COLORS[planet.owner]}55`
               }}
             />
-            <span className="mt-3 text-[9px] font-black uppercase tracking-[0.2em] text-white/70 bg-black/40 px-3 py-1 rounded-full backdrop-blur-sm">
+            <span className="mt-4 text-[8px] font-black uppercase tracking-widest text-white/60 bg-black/50 px-3 py-1 rounded-full backdrop-blur-md border border-white/5">
               {planet.name}
             </span>
           </div>
@@ -103,15 +111,14 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           <div
             key={ship.id}
             onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 z-20 ${selectedId === ship.id ? 'scale-150 z-30' : 'opacity-90'}`}
+            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 z-20 ${selectedId === ship.id ? 'scale-150 z-30 shadow-[0_0_30px_rgba(255,255,255,0.5)]' : 'opacity-90'}`}
             style={{ left: ship.x, top: ship.y }}
           >
              <div className="relative flex flex-col items-center">
                 <div 
-                   className="w-6 h-6 flex items-center justify-center rounded-lg shadow-2xl" 
+                   className="w-7 h-7 flex items-center justify-center rounded-xl border border-white/20" 
                    style={{ 
                       backgroundColor: PLAYER_COLORS[ship.owner],
-                      boxShadow: `0 0 15px ${PLAYER_COLORS[ship.owner]}88`,
                       transform: 'rotate(45deg)'
                    }}
                 >
@@ -122,10 +129,20 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
         ))}
       </div>
 
-      {/* Navigation Controls */}
-      <div className="absolute bottom-20 left-6 flex flex-col gap-3 z-30">
-        <button onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2, z + 0.2)); }} className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold">+</button>
-        <button onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.2, z - 0.2)); }} className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold">-</button>
+      {/* Vertical Navigation Controls - Left Thumb Reachable */}
+      <div className="absolute bottom-40 left-6 flex flex-col gap-4 z-[150]">
+        <button 
+          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2.5, z + 0.2)); }} 
+          className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold border-white/10 active:scale-90"
+        >
+          +
+        </button>
+        <button 
+          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.2)); }} 
+          className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold border-white/10 active:scale-90"
+        >
+          -
+        </button>
       </div>
     </div>
   );
