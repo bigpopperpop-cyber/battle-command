@@ -199,17 +199,17 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, tutorialT
         })}
       </div>
 
-      {/* Floating Zoom Controls (Bottom Rightish but away from Main Action) */}
-      <div className="absolute bottom-24 right-6 flex flex-col gap-3 z-30">
+      {/* Zoom Controls relocated to bottom-left to avoid Admiral Jarvis overlap */}
+      <div className="absolute bottom-20 left-6 flex flex-col gap-3 z-30">
         <button 
           onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(3, z + 0.15)); }} 
-          className="glass-card w-10 h-10 rounded-xl text-white font-bold text-lg flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all"
+          className="glass-card w-10 h-10 rounded-xl text-white font-bold text-lg flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all border border-white/10"
         >
           +
         </button>
         <button 
           onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.15)); }} 
-          className="glass-card w-10 h-10 rounded-xl text-white font-bold text-lg flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all"
+          className="glass-card w-10 h-10 rounded-xl text-white font-bold text-lg flex items-center justify-center hover:bg-white/10 active:scale-90 transition-all border border-white/10"
         >
           -
         </button>
