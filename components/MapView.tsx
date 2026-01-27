@@ -20,14 +20,13 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   const hasMovedRef = useRef(false);
 
   useEffect(() => {
-    const p1Planet = planets.find(p => p.owner === 'P1');
-    if (p1Planet) {
+    // Center on P1's home planet or first neutral
+    const centerPlanet = planets.find(p => p.owner === 'P1') || planets[0];
+    if (centerPlanet) {
        setOffset({ 
-         x: window.innerWidth/2 - p1Planet.x * zoom, 
-         y: window.innerHeight/2 - p1Planet.y * zoom 
+         x: window.innerWidth/2 - centerPlanet.x * zoom, 
+         y: window.innerHeight/2 - centerPlanet.y * zoom 
        });
-    } else {
-       setOffset({ x: window.innerWidth/2 - 300, y: window.innerHeight/2 - 300 });
     }
   }, []);
 
@@ -42,7 +41,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     if (!isDraggingRef.current) return;
     const dx = clientX - dragStartPosRef.current.x;
     const dy = clientY - dragStartPosRef.current.y;
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) hasMovedRef.current = true;
+    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) hasMovedRef.current = true;
     setOffset({ x: offsetAtStartRef.current.x + dx, y: offsetAtStartRef.current.y + dy });
   };
 
@@ -75,7 +74,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           height: `${GRID_SIZE}px`,
         }}
       >
-        <div className="absolute inset-0 opacity-[0.03]" style={{
+        <div className="absolute inset-0 opacity-[0.05]" style={{
           backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
           backgroundSize: '200px 200px'
         }} />
@@ -88,18 +87,18 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
             style={{ left: planet.x, top: planet.y }}
           >
             {selectedId === planet.id && (
-               <div className="absolute inset-0 w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyan-500 border-dashed animate-[spin_20s_linear_infinite]" 
+               <div className="absolute inset-0 w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyan-500 border-dashed animate-[spin_25s_linear_infinite]" 
                     style={{ left: '50%', top: '50%' }} />
             )}
             <div 
-              className={`w-9 h-9 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'scale-100 opacity-90'}`}
+              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_50px_rgba(255,255,255,0.4)]' : 'scale-100 opacity-90'}`}
               style={{ 
                 backgroundColor: PLAYER_COLORS[planet.owner],
                 borderColor: planet.owner !== 'NEUTRAL' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.1)',
-                boxShadow: `0 0 50px ${PLAYER_COLORS[planet.owner]}44`
+                boxShadow: `0 0 45px ${PLAYER_COLORS[planet.owner]}55`
               }}
             />
-            <span className="mt-4 text-[7px] font-black uppercase tracking-widest text-white/50 bg-black/50 px-3 py-1 rounded-full border border-white/5">
+            <span className="mt-4 text-[7px] font-black uppercase tracking-[0.2em] text-white/50 bg-black/50 px-3 py-1 rounded-full border border-white/5 whitespace-nowrap">
               {planet.name}
             </span>
           </div>
@@ -114,30 +113,30 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           >
              <div className="relative flex flex-col items-center">
                 <div 
-                   className="w-6 h-6 flex items-center justify-center rounded-xl border border-white/10" 
+                   className="w-7 h-7 flex items-center justify-center rounded-xl border border-white/20 shadow-xl" 
                    style={{ 
                       backgroundColor: PLAYER_COLORS[ship.owner],
                       transform: 'rotate(45deg)'
                    }}
                 >
-                   <span className="text-[10px] -rotate-45">{ship.type === 'SCOUT' ? '🚀' : ship.type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
+                   <span className="text-[11px] -rotate-45">{ship.type === 'SCOUT' ? '🚀' : ship.type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
                 </div>
              </div>
           </div>
         ))}
       </div>
 
-      {/* Navigation Controls - Re-positioned for Left Thumb accessibility in Landscape */}
-      <div className="absolute bottom-20 left-6 flex flex-col gap-3 z-[150]">
+      {/* Navigation Controls - Optimized for Left Thumb */}
+      <div className="absolute bottom-24 left-6 flex flex-col gap-4 z-[150]">
         <button 
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2.5, z + 0.15)); }} 
-          className="w-10 h-10 glass-card rounded-xl flex items-center justify-center text-lg font-bold border-white/10 active:scale-90 transition-all"
+          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2.5, z + 0.2)); }} 
+          className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold border-white/10 active:scale-90"
         >
           +
         </button>
         <button 
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.15)); }} 
-          className="w-10 h-10 glass-card rounded-xl flex items-center justify-center text-lg font-bold border-white/10 active:scale-90 transition-all"
+          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.2)); }} 
+          className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold border-white/10 active:scale-90"
         >
           -
         </button>
