@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS } from './gameLogic';
 import MapView from './components/MapView';
@@ -34,6 +34,22 @@ const App: React.FC = () => {
   const [showPostTurnSync, setShowPostTurnSync] = useState(false);
   const [lastSyncUrl, setLastSyncUrl] = useState('');
   const [copyStatus, setCopyStatus] = useState<string | null>(null);
+
+  // Economic Calculations for HUD
+  const economyStats = useMemo(() => {
+    const myPlanets = gameState.planets.filter(p => p.owner === gameState.activePlayer);
+    let income = 0;
+    let totalMines = 0;
+    let totalFactories = 0;
+
+    myPlanets.forEach(p => {
+      income += (p.mines * 50) + (p.factories * 20) + 100;
+      totalMines += p.mines;
+      totalFactories += p.factories;
+    });
+
+    return { income, totalMines, totalFactories };
+  }, [gameState.planets, gameState.activePlayer]);
 
   // Persistence Hook
   useEffect(() => {
@@ -166,7 +182,6 @@ const App: React.FC = () => {
     const data = getShareableData(gameState);
     const shareUrlWithMoves = `${window.location.origin}${window.location.pathname}#moves=${data}`;
     
-    // Auto-copy to clipboard immediately so it's ready no matter what
     try {
       await navigator.clipboard.writeText(shareUrlWithMoves);
       setCopyStatus("Orders Copied! Now Paste to Host.");
@@ -269,7 +284,6 @@ const App: React.FC = () => {
     setLastSyncUrl(syncUrl);
     setShowPostTurnSync(true);
 
-    // Auto-copy for Host
     try { await navigator.clipboard.writeText(syncUrl); } catch(e){}
 
     if (navigator.share) {
@@ -330,18 +344,13 @@ const App: React.FC = () => {
   };
 
   const handleMapSelect = (id: string, type: 'PLANET' | 'SHIP') => {
-    // Logic for "One-Tap Move"
     if (selectedType === 'SHIP' && type === 'PLANET' && selectedId) {
-       // A ship was already selected, and now we tapped a planet.
-       // Check if ship is ours
        const ship = gameState.ships.find(s => s.id === selectedId);
        if (ship && ship.owner === gameState.activePlayer) {
           setDestination(id);
           return;
        }
     }
-
-    // Default selection
     setSelectedId(id);
     setSelectedType(type);
   };
@@ -351,36 +360,48 @@ const App: React.FC = () => {
   const homePlanetId = gameState.round === 1 && !selectedId ? gameState.planets.find(p => p.owner === gameState.activePlayer)?.id : null;
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none">
-      {/* PERSISTENT INSTRUCTION BAR (GUIDE FOR WIFE) */}
-      <div className="absolute top-20 left-1/2 -translate-x-1/2 z-[50] w-full px-6 pointer-events-none">
-         <div className="max-w-md mx-auto bg-slate-900/90 backdrop-blur-md border border-cyan-500/30 rounded-full py-3 px-6 flex items-center justify-between shadow-[0_0_50px_rgba(0,0,0,0.5)] pointer-events-auto">
+    <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none touch-none">
+      
+      {/* COMMAND STRIP (TOP) - COMPACT FOR LANDSCAPE */}
+      <div className="absolute top-0 left-0 right-0 z-[100] h-14 bg-slate-900/60 backdrop-blur-xl border-b border-white/5 flex items-center justify-between px-4 sm:px-10">
+         <div className="flex items-center gap-3">
+            <button onClick={() => setIsNewGameModalOpen(true)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-slate-800 hover:bg-slate-700 text-sm">🛰️</button>
             <div className="flex flex-col">
-               <span className="text-[8px] font-black uppercase tracking-[0.2em] text-cyan-500/60">Current Mission</span>
-               <span className="text-[11px] font-bold text-white truncate max-w-[180px]">
-                 {selectedType === 'SHIP' && selectedShip?.owner === gameState.activePlayer 
-                    ? "Tap a Planet to Move" 
-                    : selectedType === 'PLANET' && selectedPlanet?.owner === gameState.activePlayer
-                    ? "Upgrading Colony"
-                    : "Tap a Ship or Planet"}
-               </span>
+               <span className="text-[7px] font-black tracking-[0.2em] text-cyan-400 uppercase leading-none mb-1">Stellar</span>
+               <span className="text-xs font-bold tracking-tight italic leading-none">COMMANDER</span>
             </div>
-            <div className="h-8 w-px bg-white/10 mx-2" />
-            <div className="text-right">
-               <span className="text-[8px] font-black uppercase tracking-[0.2em] text-cyan-500/60">Round</span>
-               <div className="text-xs font-black text-cyan-400">{gameState.round}</div>
+         </div>
+
+         <div className="flex items-center gap-4 sm:gap-8">
+            <div className="flex flex-col items-center">
+               <span className="text-[7px] font-black uppercase text-amber-500/60">Credits</span>
+               <span className="text-sm font-black text-amber-400 leading-none">{gameState.playerCredits[gameState.activePlayer]}</span>
             </div>
+            <div className="w-px h-6 bg-white/10" />
+            <div className="flex flex-col items-center">
+               <span className="text-[7px] font-black uppercase text-emerald-500/60">Income</span>
+               <span className="text-sm font-black text-emerald-400 leading-none">+{economyStats.income}</span>
+            </div>
+            <div className="w-px h-6 bg-white/10 hidden sm:block" />
+            <div className="flex flex-col items-center hidden sm:flex">
+               <span className="text-[7px] font-black uppercase text-cyan-500/60">Industry</span>
+               <span className="text-xs font-black text-white leading-none">{economyStats.totalMines}M / {economyStats.totalFactories}F</span>
+            </div>
+         </div>
+
+         <div className="flex items-center gap-2">
+            <span className="text-[7px] font-black uppercase text-slate-500 tracking-widest hidden xs:block">Round</span>
+            <div className="w-8 h-8 rounded-lg bg-slate-800 flex items-center justify-center font-black text-cyan-400 text-sm">{gameState.round}</div>
          </div>
       </div>
 
       {/* PROCESSING OVERLAY */}
       {isProcessing && (
         <div className="fixed inset-0 z-[300] flex items-center justify-center bg-slate-950/80 backdrop-blur-sm">
-           <div className="flex flex-col items-center gap-6">
-              <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin shadow-[0_0_30px_rgba(6,182,212,0.5)]" />
+           <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin shadow-[0_0_30px_rgba(6,182,212,0.5)]" />
               <div className="text-center">
-                 <h2 className="text-2xl font-bold italic text-white mb-2">PROCESSING TURN</h2>
-                 <p className="text-[10px] text-cyan-400 font-black uppercase tracking-widest animate-pulse">Calculating Subspace Trajectories...</p>
+                 <h2 className="text-xl font-bold italic text-white mb-1 uppercase tracking-tighter">Calculating Galaxy</h2>
               </div>
            </div>
         </div>
@@ -388,26 +409,23 @@ const App: React.FC = () => {
 
       {/* POST-TURN SYNC MODAL */}
       {showPostTurnSync && (
-        <div className="fixed inset-0 z-[250] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-2xl">
-          <div className="max-w-md w-full glass-card rounded-[3rem] p-10 text-center border-emerald-500/30 shadow-[0_0_100px_rgba(16,185,129,0.1)]">
-             <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                <span className="text-4xl">🛰️</span>
-             </div>
-             <h2 className="text-3xl font-bold mb-2 italic">ROUND {gameState.round - 1} COMPLETE</h2>
-             <p className="text-[10px] text-emerald-400 font-black uppercase tracking-[0.3em] mb-8">Broadcast New Coordinates</p>
-             <p className="text-sm text-slate-400 mb-8 leading-relaxed">Map updated! I've copied the new link for you. Just paste it in your group chat to update everyone.</p>
-             <div className="space-y-3">
+        <div className="fixed inset-0 z-[250] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-2xl">
+          <div className="max-w-md w-full glass-card rounded-[2rem] p-8 text-center border-emerald-500/30 shadow-[0_0_100px_rgba(16,185,129,0.1)]">
+             <h2 className="text-2xl font-bold mb-1 italic">ROUND {gameState.round - 1} COMPLETE</h2>
+             <p className="text-[8px] text-emerald-400 font-black uppercase tracking-[0.3em] mb-4">New Coordinates Ready</p>
+             <p className="text-xs text-slate-400 mb-6 leading-relaxed">Map updated! I've copied the new link. Just paste it to your players.</p>
+             <div className="flex flex-col gap-2">
                 <button 
                   onClick={() => {
                     navigator.clipboard.writeText(lastSyncUrl);
                     setCopyStatus("SUCCESS: LINK COPIED!");
                     setTimeout(() => setShowPostTurnSync(false), 1500);
                   }}
-                  className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl font-bold text-sm shadow-xl shadow-emerald-900/40 transition-all active:scale-95"
+                  className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-sm shadow-xl transition-all active:scale-95"
                 >
                   {copyStatus || "📋 Copy & Close"}
                 </button>
-                <button onClick={() => { setShowPostTurnSync(false); setCopyStatus(null); }} className="w-full py-3 text-slate-500 hover:text-slate-300 text-xs font-bold uppercase tracking-widest">
+                <button onClick={() => { setShowPostTurnSync(false); setCopyStatus(null); }} className="w-full py-2 text-slate-500 hover:text-slate-300 text-[10px] font-bold uppercase tracking-widest">
                   View Map
                 </button>
              </div>
@@ -415,35 +433,35 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {showMoveQr && (
-        <div className="fixed inset-0 z-[180] flex items-center justify-center p-6 bg-slate-950/95 backdrop-blur-xl" onClick={() => { setShowMoveQr(false); setCopyStatus(null); }}>
-          <div className="max-w-md w-full glass-card rounded-[3rem] p-10 text-center border-cyan-500/30 animate-in zoom-in-95 duration-300" onClick={e => e.stopPropagation()}>
-            <h2 className="text-3xl font-bold mb-2 italic">ORDERS READY</h2>
-            <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-8">{copyStatus || "Transmission Prepped"}</p>
-            <div className="p-6 bg-slate-900/50 border border-white/10 rounded-3xl mb-8">
-               <p className="text-sm text-slate-300 leading-relaxed">
-                 I've copied your orders! Now just go to your messages and <span className="text-white font-bold underline">Paste</span> them to the Host.
-               </p>
+      {/* JOIN MODAL */}
+      {pendingJoin && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-950/95 backdrop-blur-2xl">
+          <div className="max-w-sm w-full glass-card rounded-[2rem] p-8 text-center border-cyan-500/30">
+            <h2 className="text-2xl font-bold mb-1 italic">GALAXY DETECTED</h2>
+            <p className="text-[8px] text-cyan-400 font-black uppercase tracking-[0.3em] mb-6">Select Your Empire</p>
+            <div className="grid grid-cols-2 gap-2 max-h-[50vh] overflow-y-auto pr-2">
+              {Array.from({length: pendingJoin.playerCount}).map((_, i) => {
+                const pId = `P${i+1}` as Owner;
+                const isAi = pendingJoin.aiPlayers.includes(pId);
+                return (
+                  <button
+                    key={pId}
+                    disabled={isAi}
+                    onClick={() => claimCommand(pId)}
+                    className={`p-3 rounded-xl border transition-all flex flex-col items-center gap-1 ${isAi ? 'opacity-20 grayscale' : 'bg-slate-900/50 border-white/10 active:scale-95'}`}
+                    style={{ color: isAi ? '#475569' : PLAYER_COLORS[pId] }}
+                  >
+                    <span className="text-lg font-black">{pId}</span>
+                    <span className="text-[8px] font-bold text-white truncate w-full text-center">{pendingJoin.playerNames[pId]}</span>
+                  </button>
+                );
+              })}
             </div>
-            <button onClick={() => setShowMoveQr(false)} className="w-full py-4 bg-cyan-600 text-white rounded-2xl font-bold text-sm shadow-xl shadow-cyan-900/40">Close</button>
           </div>
         </div>
       )}
 
-      <header className="h-20 flex items-center justify-between px-6 glass-card border-b-white/5 z-20">
-        <div className="flex items-center gap-4">
-          <button onClick={() => setIsNewGameModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700" title="New Game">🛰️</button>
-          <button onClick={() => setIsInviteModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-cyan-500/30" title="Invite">📢</button>
-          <button onClick={() => setIsIngestModalOpen(true)} className="w-10 h-10 flex items-center justify-center rounded-xl bg-slate-800 hover:bg-slate-700 border border-emerald-500/30" title="Manual Ingest">📡</button>
-        </div>
-        <div className="flex items-center gap-6">
-          <button onClick={processGlobalTurn} disabled={isProcessing} className="bg-emerald-600 hover:bg-emerald-500 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all shadow-lg shadow-emerald-900/40 disabled:opacity-50 border-b-4 border-emerald-800 active:border-b-0 active:translate-y-1">
-             {isProcessing ? '⚙️ Processing...' : '📡 Execute Turn'}
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 relative">
+      <main className="flex-1 relative mt-14">
         <MapView 
           planets={gameState.planets} 
           ships={gameState.ships} 
@@ -452,62 +470,71 @@ const App: React.FC = () => {
           onSelect={handleMapSelect} 
         />
         
-        {/* Simplified Side Panel for non-tech users */}
+        {/* SIDE PANEL INFO (LEFT DRAWER FOR LANDSCAPE) */}
         {selectedPlanet && (
-          <div className="absolute top-32 left-6 w-80 glass-card rounded-[2.5rem] p-6 shadow-2xl border-white/10 animate-in fade-in slide-in-from-left-4 duration-300 z-50">
+          <div className="absolute top-4 bottom-4 left-4 w-64 glass-card rounded-3xl p-5 shadow-2xl border-white/10 animate-in slide-in-from-left-4 duration-300 z-50 overflow-y-auto">
              <div className="flex justify-between items-start mb-4">
-                <div><h2 className="text-2xl font-bold">{selectedPlanet.name}</h2><span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Sector {selectedPlanet.id}</span></div>
-                <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white">✕</button>
+                <div>
+                   <h2 className="text-lg font-bold leading-tight">{selectedPlanet.name}</h2>
+                   <span className="text-[7px] font-bold text-slate-500 uppercase tracking-widest">Sector {selectedPlanet.id}</span>
+                </div>
+                <button onClick={() => setSelectedId(null)} className="text-slate-500 hover:text-white text-sm">✕</button>
              </div>
+             
              {selectedPlanet.owner === gameState.activePlayer ? (
-               <div className="space-y-6">
-                 <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">Develop Colony</h4>
-                    <div className="grid grid-cols-2 gap-3">
-                      <button onClick={() => buildAction('MINE')} className="flex flex-col items-center justify-center p-4 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors">
-                        <span className="text-2xl mb-1">🏗️</span>
-                        <span className="text-[10px] font-black uppercase">Mines</span>
-                        <span className="text-[8px] text-amber-500 font-bold">100 Cr</span>
-                      </button>
-                      <button onClick={() => buildAction('FACTORY')} className="flex flex-col items-center justify-center p-4 bg-slate-900/50 rounded-2xl hover:bg-white/5 border border-white/5 transition-colors">
-                        <span className="text-2xl mb-1">🏭</span>
-                        <span className="text-[10px] font-black uppercase">Factory</span>
-                        <span className="text-[8px] text-amber-500 font-bold">100 Cr</span>
-                      </button>
-                    </div>
+               <div className="space-y-4">
+                 <div className="grid grid-cols-2 gap-2">
+                    <button onClick={() => buildAction('MINE')} className="p-3 bg-slate-900/50 rounded-xl border border-white/5 flex flex-col items-center">
+                       <span className="text-xl mb-1">🏗️</span>
+                       <span className="text-[8px] font-black uppercase">Mine</span>
+                       <span className="text-[7px] text-amber-500 font-bold">100 Cr</span>
+                    </button>
+                    <button onClick={() => buildAction('FACTORY')} className="p-3 bg-slate-900/50 rounded-xl border border-white/5 flex flex-col items-center">
+                       <span className="text-xl mb-1">🏭</span>
+                       <span className="text-[8px] font-black uppercase">Fact.</span>
+                       <span className="text-[7px] text-amber-500 font-bold">100 Cr</span>
+                    </button>
                  </div>
-                 <div>
-                    <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-3 text-center">Build Ships</h4>
-                    <div className="grid grid-cols-3 gap-2">
-                       {['SCOUT', 'FREIGHTER', 'WARSHIP'].map(type => (
-                         <button key={type} onClick={() => buildShip(type as ShipType)} className="p-3 bg-slate-900/80 rounded-xl border border-white/5 flex flex-col items-center gap-1 hover:border-cyan-500/50">
-                           <span className="text-lg">{type === 'SCOUT' ? '🚀' : type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
-                           <span className="text-[7px] font-black">{type}</span>
-                         </button>
-                       ))}
-                    </div>
+                 <div className="h-px bg-white/5" />
+                 <div className="grid grid-cols-3 gap-1.5">
+                    {['SCOUT', 'FREIGHTER', 'WARSHIP'].map(type => (
+                      <button key={type} onClick={() => buildShip(type as ShipType)} className="p-2 bg-slate-900/80 rounded-lg border border-white/5 flex flex-col items-center hover:border-cyan-500/50">
+                        <span className="text-sm">{type === 'SCOUT' ? '🚀' : type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
+                        <span className="text-[6px] font-black">{type}</span>
+                      </button>
+                    ))}
                  </div>
                </div>
              ) : (
-               <div className="bg-slate-900/50 p-6 rounded-2xl text-center border border-white/5">
-                 <p className="text-xs text-slate-400 italic">Sector controlled by <br/><span className="font-bold text-white text-base">{gameState.playerNames[selectedPlanet.owner] || selectedPlanet.owner}</span></p>
+               <div className="bg-slate-950/50 p-4 rounded-xl text-center border border-white/5">
+                 <p className="text-[10px] text-slate-500 italic">Sector controlled by</p>
+                 <p className="font-bold text-white text-xs mt-1">{gameState.playerNames[selectedPlanet.owner] || selectedPlanet.owner}</p>
                </div>
              )}
           </div>
         )}
-        
-        <div className="absolute bottom-6 right-6 flex flex-col items-end gap-3">
+
+        {/* SHIP TARGETING OVERLAY (FLOATING CENTER TOP) */}
+        {selectedType === 'SHIP' && selectedShip?.owner === gameState.activePlayer && (
+           <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-cyan-600/90 backdrop-blur-md px-6 py-2 rounded-full border border-cyan-400/50 shadow-2xl z-40 animate-bounce">
+              <span className="text-[9px] font-black uppercase tracking-widest text-white">TAP A PLANET TO MOVE SHIP</span>
+           </div>
+        )}
+
+        {/* ACTION CLUSTER (BOTTOM RIGHT - THUMB POSITION) */}
+        <div className="absolute bottom-4 right-4 flex flex-col items-end gap-3 z-40">
+           <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-cyan-500 rounded-2xl flex items-center justify-center text-xl shadow-xl shadow-cyan-500/20 active:scale-90 transition-all">❂</button>
            <button 
-             onClick={shareTurn} 
-             className="bg-cyan-600 hover:bg-cyan-500 px-10 py-5 rounded-[2.5rem] font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-cyan-900/40 transition-all active:scale-90 border-b-4 border-cyan-800 active:border-b-0 flex items-center gap-3"
+             onClick={gameState.activePlayer === 'P1' ? processGlobalTurn : shareTurn} 
+             disabled={isProcessing}
+             className={`${gameState.activePlayer === 'P1' ? 'bg-emerald-600 border-emerald-800' : 'bg-cyan-600 border-cyan-800'} px-6 py-4 rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-2xl transition-all active:scale-90 border-b-4 active:border-b-0 flex items-center gap-3`}
            >
-             📤 {gameState.activePlayer === 'P1' ? 'SYNC GALAXY' : 'SEND MOVES'}
+             {isProcessing ? '⚙️' : (gameState.activePlayer === 'P1' ? '📡 EXECUTE' : '📤 SEND MOVES')}
            </button>
         </div>
-      </main>
 
-      <footer className="h-24 glass-card border-t-white/5 flex items-center justify-between px-6 md:px-10">
-        <div className="flex gap-2 md:gap-3 flex-wrap">
+        {/* PLAYER RAIL (BOTTOM LEFT) */}
+        <div className="absolute bottom-4 left-4 flex gap-1.5 z-40 bg-slate-900/40 p-1.5 rounded-2xl backdrop-blur-md border border-white/5">
           {Array.from({length: gameState.playerCount}).map((_, i) => {
             const pId = `P${i+1}` as Owner;
             const isActive = gameState.activePlayer === pId;
@@ -516,19 +543,16 @@ const App: React.FC = () => {
               <button 
                 key={i}
                 onClick={() => setGameState(p => ({...p, activePlayer: pId}))}
-                className={`w-12 h-12 rounded-2xl font-black text-sm transition-all border-2 flex items-center justify-center relative ${isActive ? 'scale-110 shadow-[0_0_15px_rgba(255,255,255,0.2)]' : 'opacity-30 hover:opacity-100'}`}
+                className={`w-9 h-9 rounded-xl font-black text-[10px] transition-all border flex items-center justify-center relative ${isActive ? 'scale-110' : 'opacity-40 hover:opacity-100'}`}
                 style={{ borderColor: PLAYER_COLORS[pId], backgroundColor: isActive ? `${PLAYER_COLORS[pId]}22` : 'transparent', color: PLAYER_COLORS[pId] }}
               >
                 {pId}
-                {isReady && <span className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full border-2 border-slate-900 animate-pulse shadow-lg" />}
+                {isReady && <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-slate-900 shadow-lg" />}
               </button>
             );
           })}
         </div>
-        <div className="flex items-center gap-4">
-          <button onClick={() => setIsAdvisorOpen(true)} className="w-16 h-16 bg-cyan-500 rounded-full flex items-center justify-center text-3xl shadow-2xl shadow-cyan-500/30 hover:scale-110 transition-transform active:rotate-12">❂</button>
-        </div>
-      </footer>
+      </main>
 
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
