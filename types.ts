@@ -1,5 +1,6 @@
 
 export type Owner = 'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6' | 'P7' | 'P8' | 'NEUTRAL';
+export type AiDifficulty = 'EASY' | 'ADVANCED';
 
 export interface Planet {
   id: string;
@@ -53,6 +54,7 @@ export interface GameState {
   logs: string[];
   playerCount: number;
   aiPlayers: Owner[];
+  aiDifficulty: AiDifficulty;
   isHost: boolean;
   activePlayer: Owner;
   readyPlayers: Owner[]; 

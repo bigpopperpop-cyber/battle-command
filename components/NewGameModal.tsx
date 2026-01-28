@@ -1,17 +1,18 @@
 
 import React from 'react';
 import { PLAYER_COLORS } from '../gameLogic';
-import { Owner } from '../types';
+import { Owner, AiDifficulty } from '../types';
 
 interface NewGameModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onConfirm: (playerCount: number, aiCount: number, names: Record<string, string>) => void;
+  onConfirm: (playerCount: number, aiCount: number, names: Record<string, string>, difficulty: AiDifficulty) => void;
 }
 
 const NewGameModal: React.FC<NewGameModalProps> = ({ isOpen, onClose, onConfirm }) => {
   const [selectedCount, setSelectedCount] = React.useState(2);
   const [aiCount, setAiCount] = React.useState(0);
+  const [difficulty, setDifficulty] = React.useState<AiDifficulty>('EASY');
   const [names, setNames] = React.useState<Record<string, string>>({
     P1: 'Commander One',
     P2: 'Commander Two'
@@ -86,36 +87,58 @@ const NewGameModal: React.FC<NewGameModalProps> = ({ isOpen, onClose, onConfirm 
             </div>
           </div>
 
-          <div>
-            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block text-center">AI Opponents</label>
-            <div className="flex justify-center gap-3">
-              {[0, 1, 2, 3, 4].map((count) => {
-                const disabled = count >= selectedCount;
-                return (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block text-center">AI Opponents</label>
+              <div className="flex justify-center gap-3">
+                {[0, 1, 2, 3, 4].map((count) => {
+                  const disabled = count >= selectedCount;
+                  return (
+                    <button
+                      key={count}
+                      disabled={disabled}
+                      onClick={() => setAiCount(count)}
+                      className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all border-2 ${
+                        disabled ? 'opacity-20 grayscale' :
+                        aiCount === count 
+                          ? 'bg-emerald-500/20 border-emerald-500 scale-105 shadow-lg shadow-emerald-500/20' 
+                          : 'bg-slate-900/50 border-white/5 hover:border-white/20'
+                      }`}
+                    >
+                      <span className="text-lg font-bold">🤖</span>
+                      <span className="text-[10px] font-black">{count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-4 block text-center">AI Difficulty</label>
+              <div className="flex justify-center gap-3">
+                {(['EASY', 'ADVANCED'] as AiDifficulty[]).map((d) => (
                   <button
-                    key={count}
-                    disabled={disabled}
-                    onClick={() => setAiCount(count)}
-                    className={`w-12 h-12 rounded-xl flex flex-col items-center justify-center transition-all border-2 ${
-                      disabled ? 'opacity-20 grayscale' :
-                      aiCount === count 
-                        ? 'bg-emerald-500/20 border-emerald-500 scale-105' 
-                        : 'bg-slate-900/50 border-white/5 hover:border-white/20'
+                    key={d}
+                    onClick={() => setDifficulty(d)}
+                    className={`flex-1 py-3 px-4 rounded-xl flex flex-col items-center justify-center transition-all border-2 ${
+                      difficulty === d 
+                        ? 'bg-amber-500/20 border-amber-500 scale-105 shadow-lg shadow-amber-500/20 text-white' 
+                        : 'bg-slate-900/50 border-white/5 text-slate-500 hover:border-white/20'
                     }`}
                   >
-                    <span className="text-lg font-bold">🤖</span>
-                    <span className="text-[10px] font-black">{count}</span>
+                    <span className="text-lg font-bold">{d === 'EASY' ? '🕊️' : '⚔️'}</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">{d === 'EASY' ? 'Casual' : 'Warlord'}</span>
                   </button>
-                );
-              })}
+                ))}
+              </div>
             </div>
           </div>
         </div>
 
-        <div className="flex gap-4 mt-8">
+        <div className="flex gap-4 mt-10">
           <button onClick={onClose} className="flex-1 py-4 rounded-2xl font-bold text-slate-400 hover:text-white transition-all">Cancel</button>
           <button 
-            onClick={() => onConfirm(selectedCount, effectiveAiCount, names)}
+            onClick={() => onConfirm(selectedCount, effectiveAiCount, names, difficulty)}
             className="flex-[2] py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-bold text-lg shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
           >
             Launch Mission

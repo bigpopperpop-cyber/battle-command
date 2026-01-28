@@ -3,7 +3,6 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { GameState, Owner } from "../types";
 
 export const getAdvisorFeedback = async (gameState: GameState, userPrompt: string) => {
-  // Fix: Initializing GoogleGenAI inside the function to ensure the most current environment configuration is used.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const model = "gemini-3-flash-preview";
   
@@ -35,7 +34,6 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
         temperature: 0.8,
       },
     });
-    // Fix: Access the .text property directly as per Gemini API guidelines.
     return response.text || "I'm having a little trouble with the subspace relay, but you're doing a great job!";
   } catch (error) {
     console.error("Advisor Error:", error);
@@ -44,26 +42,52 @@ export const getAdvisorFeedback = async (gameState: GameState, userPrompt: strin
 };
 
 export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
-  // Fix: Initializing GoogleGenAI inside the function to ensure the latest API key from the environment is utilized.
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  // Using gemini-3-pro-preview for complex strategic decision making.
   const model = "gemini-3-pro-preview";
   
   const myPlanets = gameState.planets.filter(p => p.owner === aiPlayerId);
   const myShips = gameState.ships.filter(s => s.owner === aiPlayerId);
+  const otherPlanets = gameState.planets.filter(p => p.owner !== aiPlayerId);
   const neutralPlanets = gameState.planets.filter(p => p.owner === 'NEUTRAL');
+  const enemyPlanets = gameState.planets.filter(p => p.owner !== 'NEUTRAL' && p.owner !== aiPlayerId);
+
+  let tacticalInstruction = "";
+  if (gameState.aiDifficulty === 'EASY') {
+    tacticalInstruction = `
+      - Play PASSIVELY and CAUTIOUSLY.
+      - Focus on colonizing Neutral planets only. 
+      - Avoid attacking other players or entering their territory.
+      - Prioritize 'MINE' construction for economy over 'FACTORY' construction for war.
+      - If you have many ships, keep some IDLE to be less threatening.`;
+  } else {
+    tacticalInstruction = `
+      - Play AGGRESSIVELY and STRATEGICALLY.
+      - Actively target planets owned by rival players, especially those with low defense or low population.
+      - Prioritize building 'FACTORY' to increase warship production if credits are available.
+      - Coordinate attacks: send Warships to bombard enemy populations and Freighters to drop off colonists after the population hits zero.
+      - Seek to dominate the entire map.`;
+  }
 
   const systemInstruction = `You are an AI player controlling ${gameState.playerNames[aiPlayerId]} (${aiPlayerId}) in a space strategy game.
   Your goal is to decide your moves for this turn. 
-  1. For each IDLE/ORBITING ship, give it a targetPlanetId from the Nearby Neutral Planets to colonize or expand.
-  2. For each planet, decide if you want to build a 'MINE' or 'FACTORY' (Cost: 100).
+  Difficulty Level: ${gameState.aiDifficulty}.
+  
+  TACTICAL DOCTRINE:${tacticalInstruction}
+
+  1. For each ship, decide its targetPlanetId. 
+     - SCOUTS should explore Neutral space.
+     - WARSHIPS should defend or attack according to difficulty.
+     - FREIGHTERS should transport people (cargoPeople) to colonize or reinforce.
+  2. For each owned planet, decide construction: 'MINE' (income) or 'FACTORY' (construction power). Cost is 100 each.
+  
   Return your decisions as a JSON object.`;
 
   const prompt = `Current State for ${aiPlayerId}:
   Credits: ${gameState.playerCredits[aiPlayerId]}
-  Your Ships: ${JSON.stringify(myShips.map(s => ({id: s.id, type: s.type, x: s.x, y: s.y, status: s.status})))}
+  Your Ships: ${JSON.stringify(myShips.map(s => ({id: s.id, type: s.type, x: s.x, y: s.y, status: s.status, cargoPeople: s.cargoPeople})))}
   Nearby Neutral Planets: ${JSON.stringify(neutralPlanets.slice(0, 5).map(p => ({id: p.id, name: p.name, x: p.x, y: p.y})))}
-  Your Planets: ${JSON.stringify(myPlanets.map(p => ({id: p.id, mines: p.mines, factories: p.factories})))}
+  Nearby Enemy Planets: ${JSON.stringify(enemyPlanets.slice(0, 5).map(p => ({id: p.id, name: p.name, owner: p.owner, pop: p.population, def: p.defense})))}
+  Your Planets: ${JSON.stringify(myPlanets.map(p => ({id: p.id, mines: p.mines, factories: p.factories, pop: p.population})))}
 
   Decide moves for this turn.`;
 
@@ -107,11 +131,8 @@ export const getAiMoves = async (gameState: GameState, aiPlayerId: Owner) => {
       }
     });
 
-    // Fix: Using response.text.trim() for JSON content extraction when responseMimeType is application/json.
     const jsonStr = response.text?.trim();
     if (!jsonStr) return { shipOrders: [], planetOrders: [] };
-    
-    // When application/json is specified, the output is raw JSON without markdown blocks.
     return JSON.parse(jsonStr);
   } catch (error) {
     console.error("AI Decision Error:", error);

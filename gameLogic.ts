@@ -1,5 +1,5 @@
 
-import { Planet, Ship, GameState, Owner, ShipType } from './types';
+import { Planet, Ship, GameState, Owner, ShipType, AiDifficulty } from './types';
 
 export const GRID_SIZE = 1200;
 export const PLANET_COUNT = 24;
@@ -55,7 +55,8 @@ export const generateInitialState = (
   playerCount: number = 2, 
   aiCount: number = 0, 
   seed?: number,
-  customNames?: Record<string, string>
+  customNames?: Record<string, string>,
+  aiDifficulty: AiDifficulty = 'EASY'
 ): GameState => {
   const actualSeed = seed ?? Math.floor(Math.random() * 1000000);
   const rnd = seededRandom(actualSeed);
@@ -135,6 +136,7 @@ export const generateInitialState = (
     logs: ["Commander, colonies initialized. Protect your population to maintain sector control."],
     playerCount,
     aiPlayers,
+    aiDifficulty,
     isHost: true,
     activePlayer: 'P1',
     readyPlayers: []

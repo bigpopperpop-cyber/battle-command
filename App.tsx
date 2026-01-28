@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { GameState, Planet, Ship, Owner, ShipType } from './types';
+import { GameState, Planet, Ship, Owner, ShipType, AiDifficulty } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS, SHIP_STATS, MAX_PLANET_POPULATION } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
@@ -10,7 +10,7 @@ import InviteModal from './components/InviteModal';
 import IngestModal from './components/IngestModal';
 import { getAiMoves } from './services/geminiService';
 
-const SAVE_KEY = 'stellar_commander_save_v2';
+const SAVE_KEY = 'stellar_commander_save_v3';
 const KIRK_CHANCE = 0.15; 
 
 const App: React.FC = () => {
@@ -56,7 +56,7 @@ const App: React.FC = () => {
       try {
         const dataStr = hash.substring(6);
         const compact = JSON.parse(atob(dataStr));
-        const baseState = generateInitialState(compact.pc, compact.ai.length, compact.sd, compact.nm);
+        const baseState = generateInitialState(compact.pc, compact.ai.length, compact.sd, compact.nm, compact.dif || 'EASY');
         baseState.round = compact.rd;
         baseState.playerCredits = compact.cr;
         baseState.aiPlayers = compact.ai;
@@ -109,7 +109,7 @@ const App: React.FC = () => {
     let nextCredits = { ...gameState.playerCredits };
     const newLogs: string[] = [`--- Round ${gameState.round} Resolution ---`];
 
-    // AI logic (simplified for turn loop speed)
+    // AI Logic - Gemini processing for computer empires
     for (const aiId of gameState.aiPlayers) {
       try {
         const moves = await getAiMoves(gameState, aiId);
@@ -131,7 +131,7 @@ const App: React.FC = () => {
       } catch (e) { console.error(`AI ${aiId} Error`, e); }
     }
 
-    // Resolve Turn
+    // Resolve Movement
     nextShips.forEach(s => {
       if (s.status === 'MOVING' && s.targetPlanetId) {
         const target = nextPlanets.find(p => p.id === s.targetPlanetId);
@@ -144,10 +144,12 @@ const App: React.FC = () => {
       }
     });
 
+    // Population Growth
     nextPlanets.forEach(p => {
       if (p.owner !== 'NEUTRAL') p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
     });
 
+    // Conflict Resolution
     nextPlanets.forEach(planet => {
       const orbitingShips = nextShips.filter(s => s.currentPlanetId === planet.id);
       const owners = Array.from(new Set(orbitingShips.map(s => s.owner)));
@@ -270,12 +272,11 @@ const App: React.FC = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none touch-none font-['Space_Grotesk']">
       
-      {/* ADAPTIVE HUD: Compact for mobile */}
       <div className="absolute top-0 left-0 right-0 z-[100] h-14 bg-gradient-to-b from-slate-950/95 to-transparent flex items-center justify-between px-4 md:px-8">
          <div className="flex items-center gap-3">
             <div className={`w-3 h-3 rounded-full ${relayStatus === 'CONNECTED' ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : 'bg-amber-500 animate-pulse'}`} />
             <div className="hidden sm:block">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">SECTOR DATA</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">SECTOR SNAPSHOT</p>
               <p className="text-[12px] font-bold text-cyan-400">ROUND {gameState.round}</p>
             </div>
             <div className="sm:hidden text-[12px] font-black text-cyan-400">R-{gameState.round}</div>
@@ -310,10 +311,12 @@ const App: React.FC = () => {
       <main className="flex-1 relative">
         <MapView planets={gameState.planets} ships={gameState.ships} selectedId={selectedId} onSelect={handleMapSelect} />
 
-        {/* HOST OVERLAY: Compact for Mobile */}
         {viewMode === 'HOST' && !selectedId && (
-           <div className="absolute top-20 left-4 z-40 bg-slate-900/90 backdrop-blur-2xl border border-white/10 p-4 rounded-3xl w-44 shadow-2xl">
-              <h4 className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-3">Empire Sync</h4>
+           <div className="absolute top-20 left-4 z-40 bg-slate-900/90 backdrop-blur-2xl border border-white/10 p-4 rounded-3xl w-48 shadow-2xl">
+              <div className="mb-3">
+                 <h4 className="text-[8px] font-black text-slate-500 uppercase tracking-widest leading-none">Empire Sync</h4>
+                 <p className="text-[7px] text-amber-500 font-bold uppercase">{gameState.aiDifficulty} Mode</p>
+              </div>
               <div className="space-y-2 mb-4">
                  {Array.from({length: gameState.playerCount}).map((_, i) => {
                     const pId = `P${i+1}` as Owner;
@@ -333,7 +336,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* ERGONOMIC ACTION HUB: Thumb-friendly buttons */}
         {viewMode === 'PLAYER' && (
            <div className={`absolute z-[120] flex pointer-events-none transition-all duration-300 ${isLandscape ? 'bottom-6 right-6 flex-col items-end gap-3' : 'bottom-4 left-4 right-4 justify-between items-end'}`}>
               <div className="pointer-events-auto flex items-end gap-3 w-full justify-between">
@@ -346,7 +348,6 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* COMMAND SHEET: Responsive drawer/sidebar */}
         <div className={`absolute transition-all duration-500 ease-out z-[130] 
           ${isLandscape 
             ? `top-20 bottom-20 left-0 w-80 ${selectedId ? 'translate-x-6' : '-translate-x-full'}` 
@@ -357,7 +358,6 @@ const App: React.FC = () => {
             relative flex flex-col bg-slate-900/98 backdrop-blur-3xl border-white/10 shadow-2xl overflow-hidden
             ${isLandscape ? 'h-full rounded-[3rem] border' : 'rounded-t-[3.5rem] border-t max-h-[50vh] min-h-[40vh]'}
           `}>
-             {/* Portrait Handle */}
              {!isLandscape && <div className="absolute top-4 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/10 rounded-full" />}
              
              <div className="p-8 pb-4 flex justify-between items-start">
@@ -490,7 +490,7 @@ const App: React.FC = () => {
             setIsIngestModalOpen(false);
           } catch(e) { console.error(e); }
         }} readyPlayers={gameState.readyPlayers} />
-      <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n) => { setGameState(generateInitialState(p, a, undefined, n)); setIsNewGameModalOpen(false); setSelectedId(null); }} />
+      <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n, d) => { setGameState(generateInitialState(p, a, undefined, n, d)); setIsNewGameModalOpen(false); setSelectedId(null); }} />
       <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} joinUrl={`${window.location.origin}${window.location.pathname}`} gameState={gameState} />
     </div>
   );
