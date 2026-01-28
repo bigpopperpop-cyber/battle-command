@@ -109,7 +109,7 @@ const App: React.FC = () => {
     let nextCredits = { ...gameState.playerCredits };
     const newLogs: string[] = [`--- Round ${gameState.round} Resolution ---`];
 
-    // AI Logic - Gemini processing for computer empires
+    // AI Logic
     for (const aiId of gameState.aiPlayers) {
       try {
         const moves = await getAiMoves(gameState, aiId);
@@ -299,8 +299,9 @@ const App: React.FC = () => {
          <div className="flex items-center gap-1.5">
             {viewMode === 'HOST' ? (
               <>
-                <button onClick={() => setIsInviteModalOpen(true)} className="w-9 h-9 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20 active:bg-cyan-600/40">🔗</button>
-                <button onClick={() => setIsIngestModalOpen(true)} className="w-9 h-9 rounded-xl bg-emerald-600/20 flex items-center justify-center text-sm border border-emerald-500/20 active:bg-emerald-600/40">📡</button>
+                <button onClick={() => setIsNewGameModalOpen(true)} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/10 active:bg-white/20" title="New Galaxy">🆕</button>
+                <button onClick={() => setIsInviteModalOpen(true)} className="w-9 h-9 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20 active:bg-cyan-600/40" title="Empire Codes">🔗</button>
+                <button onClick={() => setIsIngestModalOpen(true)} className="w-9 h-9 rounded-xl bg-emerald-600/20 flex items-center justify-center text-sm border border-emerald-500/20 active:bg-emerald-600/40" title="Receive Orders">📡</button>
               </>
             ) : (
               <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/10 active:bg-white/10">?</button>
@@ -481,7 +482,7 @@ const App: React.FC = () => {
                 const order = orders.ships.find((o:any) => o.id === s.id);
                 return order ? { ...s, status: 'MOVING', targetPlanetId: order.t, currentPlanetId: undefined, cargoPeople: order.cp_p !== undefined ? order.cp_p : s.cargoPeople } : s;
               });
-              const nextPlanets = prev.planets.map(p => {
+              const nextPlanets = prev.map(p => {
                 const order = orders.builds.find((o:any) => o.id === p.id);
                 return order ? { ...p, mines: order.m, factories: order.f, population: order.pop !== undefined ? order.pop : p.population } : p;
               });
