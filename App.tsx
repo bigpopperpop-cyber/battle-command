@@ -12,7 +12,7 @@ import OrderQrModal from './components/OrderQrModal';
 import { getAiMoves } from './services/geminiService';
 import { Peer, DataConnection } from 'peerjs';
 
-const SAVE_KEY = 'stellar_commander_save_v5';
+const SAVE_KEY = 'stellar_commander_save_v6';
 const KIRK_CHANCE = 0.15; 
 
 const App: React.FC = () => {
@@ -37,6 +37,7 @@ const App: React.FC = () => {
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
   const [isOrderQrModalOpen, setIsOrderQrModalOpen] = useState(false);
+  const [isLinkModalOpen, setIsLinkModalOpen] = useState(false);
   const [currentOrderCode, setCurrentOrderCode] = useState('');
   
   const [isProcessing, setIsProcessing] = useState(false);
@@ -49,9 +50,9 @@ const App: React.FC = () => {
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Record<string, DataConnection>>({});
 
-  // Initialize PeerJS for Host
   const initHostPeer = useCallback((seed: number) => {
-    const hostFreq = (seed % 9000 + 1000).toString(); // Stable 4-digit code
+    const hostFreq = (seed % 9000 + 1000).toString(); 
+    if (peerRef.current) peerRef.current.destroy();
     const peer = new Peer(`SC-HOST-${hostFreq}`);
     
     peer.on('open', () => {
@@ -91,7 +92,6 @@ const App: React.FC = () => {
 
   const connectToHost = (hostFreq: string) => {
     if (peerRef.current) peerRef.current.destroy();
-    
     const peer = new Peer();
     peer.on('open', () => {
       const conn = peer.connect(`SC-HOST-${hostFreq}`);
@@ -99,10 +99,9 @@ const App: React.FC = () => {
         setIsLinked(true);
         setFrequency(hostFreq);
         setHasInitiated(true);
+        setIsLinkModalOpen(false);
       });
-      conn.on('error', (err) => {
-        alert("Frequency unstable. Ensure host is online.");
-      });
+      conn.on('error', () => alert("Frequency unstable. Ensure host is online."));
     });
     peerRef.current = peer;
   };
@@ -111,25 +110,26 @@ const App: React.FC = () => {
     const params = new URLSearchParams(window.location.search);
     const role = params.get('role') as Owner;
     const joinFreq = params.get('freq');
+    const mode = params.get('mode');
     
     if (role && role.startsWith('P')) {
       setViewMode('PLAYER');
       setPlayerRole(role);
       setGameState(prev => ({ ...prev, activePlayer: role }));
-      if (joinFreq) {
-        connectToHost(joinFreq);
-      }
-    } else if (params.get('mode') === 'host' || !role) {
-      // Default to host if no specific player role
+      if (joinFreq) connectToHost(joinFreq);
+    } else if (mode === 'host') {
       setViewMode('HOST');
       initHostPeer(gameState.seed);
       setHasInitiated(true);
+    } else if (!role && !mode) {
+      // Don't auto-init, wait for Landing Screen
+      setHasInitiated(false);
     }
 
     const handleResize = () => setIsLandscape(window.innerWidth > window.innerHeight);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [gameState.seed, initHostPeer]);
+  }, []); // Only run once on mount
 
   const submitOrdersToHost = async () => {
     const myOrders = {
@@ -141,17 +141,12 @@ const App: React.FC = () => {
     const commandString = `COMMAND_DATA:${code}`;
     
     if (isLinked && peerRef.current && frequency) {
-      try {
-        const conn = peerRef.current.connect(`SC-HOST-${frequency}`);
-        conn.on('open', () => {
-          conn.send(commandString);
-          alert("Subspace Transmission Complete! Orders synced with Host.");
-          setGameState(prev => ({ ...prev, readyPlayers: Array.from(new Set([...prev.readyPlayers, playerRole!])) }));
-        });
-      } catch (e) {
-        setCurrentOrderCode(commandString);
-        setIsOrderQrModalOpen(true);
-      }
+      const conn = peerRef.current.connect(`SC-HOST-${frequency}`);
+      conn.on('open', () => {
+        conn.send(commandString);
+        alert("Subspace Transmission Complete! Orders synced with Host.");
+        setGameState(prev => ({ ...prev, readyPlayers: Array.from(new Set([...prev.readyPlayers, playerRole!])) }));
+      });
     } else {
       setCurrentOrderCode(commandString);
       setIsOrderQrModalOpen(true);
@@ -163,10 +158,7 @@ const App: React.FC = () => {
     let nextPlanets = gameState.planets.map(p => ({...p}));
     let nextShips = gameState.ships.map(s => ({...s}));
     let nextCredits = { ...gameState.playerCredits };
-    const newLogs: string[] = [`--- Round ${gameState.round} Resolution ---`];
 
-    // AI logic and game resolution logic (omitted for brevity, assume same as before)
-    // ... logic remains identical to previous turns to preserve gameplay stability ...
     for (const aiId of gameState.aiPlayers) {
       try {
         const moves = await getAiMoves(gameState, aiId);
@@ -245,7 +237,7 @@ const App: React.FC = () => {
 
   if (!hasInitiated) {
     return (
-      <div className="fixed inset-0 bg-[#050b1a] flex items-center justify-center p-6 text-center">
+      <div className="fixed inset-0 bg-[#050b1a] flex items-center justify-center p-6 text-center z-[500]">
         <div className="w-full max-w-md glass-card rounded-[4rem] border-cyan-500/20 p-12 shadow-[0_0_120px_rgba(34,211,238,0.1)]">
            <h1 className="text-5xl font-black text-white italic mb-2 tracking-tighter">STELLAR</h1>
            <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-12">Empire Tuning Station</p>
@@ -266,13 +258,13 @@ const App: React.FC = () => {
                   value={joinInput}
                   onChange={(e) => setJoinInput(e.target.value.slice(0, 4))}
                   placeholder="CODE"
-                  className="flex-1 bg-slate-900 border-2 border-white/10 rounded-2xl p-4 text-center text-xl font-black text-cyan-400 placeholder:text-slate-800 outline-none focus:border-cyan-500"
+                  className="flex-1 bg-slate-900 border-2 border-white/10 rounded-2xl p-4 text-center text-xl font-black text-cyan-400 placeholder:text-slate-800 outline-none focus:border-cyan-500 uppercase"
                 />
                 <select 
                   onChange={(e) => setPlayerRole(e.target.value as Owner)}
                   className="bg-slate-900 border-2 border-white/10 rounded-2xl p-4 text-[10px] font-black text-white outline-none"
                 >
-                  <option value="">SELECT EMPIRE</option>
+                  <option value="">EMPIRE</option>
                   {[2,3,4,5,6,7,8].map(i => <option key={i} value={`P${i}`}>P{i}</option>)}
                 </select>
               </div>
@@ -292,14 +284,20 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none touch-none font-['Space_Grotesk']">
-      {/* HUD Header */}
       <div className="absolute top-0 left-0 right-0 z-[100] h-14 bg-gradient-to-b from-slate-950/95 to-transparent flex items-center justify-between px-4 md:px-8">
          <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${isLinked ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : 'bg-slate-700'}`} />
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">FREQ: {frequency || '---'} MHz</p>
-              <p className="text-[12px] font-bold text-cyan-400 uppercase tracking-tight">{viewMode === 'HOST' ? 'FLEET COMMAND' : `EMPIRE ${playerRole}`}</p>
-            </div>
+            <button 
+              onClick={() => viewMode === 'PLAYER' && setIsLinkModalOpen(true)}
+              className={`flex items-center gap-2 p-1.5 rounded-xl transition-all ${!isLinked && viewMode === 'PLAYER' ? 'bg-amber-500/10 border border-amber-500/30' : ''}`}
+            >
+              <div className={`w-3 h-3 rounded-full ${isLinked ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : 'bg-slate-700 animate-pulse'}`} />
+              <div>
+                <p className="text-[9px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">
+                  {isLinked ? `${frequency} MHz` : (viewMode === 'PLAYER' ? 'TUNE' : 'IDLE')}
+                </p>
+                <p className="text-[11px] font-bold text-cyan-400 uppercase tracking-tight">{viewMode === 'HOST' ? 'COMMAND' : `EMP ${playerRole}`}</p>
+              </div>
+            </button>
          </div>
 
          {viewMode === 'PLAYER' && (
@@ -362,9 +360,8 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* Tactical Drawer (only if selectedId is set) */}
         {selectedId && (
-          <div className={`absolute transition-all duration-500 ease-out z-[130] bottom-0 left-0 right-0 translate-y-0`}>
+          <div className="absolute transition-all duration-500 ease-out z-[130] bottom-0 left-0 right-0 translate-y-0">
              <div className="relative flex flex-col bg-slate-900/98 backdrop-blur-3xl border-t border-white/10 shadow-2xl overflow-hidden rounded-t-[3.5rem] max-h-[50vh] min-h-[40vh] p-8">
                 <div className="absolute top-4 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/10 rounded-full" />
                 <div className="flex justify-between items-start mb-6">
@@ -375,18 +372,53 @@ const App: React.FC = () => {
                    <button onClick={() => setSelectedId(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-400">✕</button>
                 </div>
                 <div className="flex-1 overflow-y-auto">
-                   <p className="text-sm text-slate-400 italic">Accessing tactical archives for unit {selectedId}...</p>
+                   <p className="text-sm text-slate-400 italic">Tactical data stream active. Use map targets to designate ship movements.</p>
                 </div>
              </div>
           </div>
         )}
       </main>
 
+      {/* Modals */}
+      {isLinkModalOpen && (
+        <div className="fixed inset-0 z-[600] flex items-center justify-center p-6 text-center">
+          <div className="absolute inset-0 bg-slate-950/90 backdrop-blur-xl" onClick={() => setIsLinkModalOpen(false)} />
+          <div className="relative w-full max-w-sm glass-card rounded-[3rem] border-cyan-500/20 p-10 shadow-[0_0_120px_rgba(34,211,238,0.1)]">
+             <h2 className="text-2xl font-black text-white italic mb-1 uppercase tracking-tighter">SUBSPACE TUNE</h2>
+             <p className="text-[8px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-8">Enter Host Frequency</p>
+             <div className="flex gap-2 mb-6">
+                <input 
+                  type="text" 
+                  value={joinInput}
+                  onChange={(e) => setJoinInput(e.target.value.slice(0, 4))}
+                  placeholder="CODE"
+                  className="flex-1 bg-slate-900 border-2 border-white/10 rounded-2xl p-4 text-center text-xl font-black text-cyan-400 outline-none focus:border-cyan-500 uppercase"
+                />
+                <select 
+                  value={playerRole || ''}
+                  onChange={(e) => setPlayerRole(e.target.value as Owner)}
+                  className="bg-slate-900 border-2 border-white/10 rounded-2xl p-4 text-[10px] font-black text-white outline-none"
+                >
+                  <option value="">EMP</option>
+                  {[2,3,4,5,6,7,8].map(i => <option key={i} value={`P${i}`}>P{i}</option>)}
+                </select>
+             </div>
+             <button 
+                disabled={!joinInput || !playerRole}
+                onClick={() => connectToHost(joinInput)} 
+                className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all active:scale-95 border-b-4 border-emerald-800 disabled:opacity-20"
+              >
+                SYNC FREQUENCY
+              </button>
+          </div>
+        </div>
+      )}
+
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
       <HelpModal gameState={gameState} playerRole={playerRole} isOpen={isHelpOpen} initialTab={helpTab} onClose={() => setIsHelpOpen(false)} />
       <IngestModal isOpen={isIngestModalOpen} onClose={() => setIsIngestModalOpen(false)} onIngest={handleIncomingOrders} readyPlayers={gameState.readyPlayers} frequency={frequency} />
       <OrderQrModal isOpen={isOrderQrModalOpen} onClose={() => setIsOrderQrModalOpen(false)} orderCode={currentOrderCode} playerName={gameState.playerNames[playerRole!] || 'Commander'} />
-      <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n, d) => { setGameState(generateInitialState(p, a, undefined, n, d)); setIsNewGameModalOpen(false); setSelectedId(null); }} />
+      <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n, d) => { setGameState(generateInitialState(p, a, undefined, n, d)); setIsNewGameModalOpen(false); setHasInitiated(true); setViewMode('HOST'); initHostPeer(gameState.seed); }} />
       <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} frequency={frequency} gameState={gameState} />
     </div>
   );
