@@ -4,7 +4,7 @@ import { GameState, Planet, Ship, Owner, ShipType, AiDifficulty } from './types'
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS, SHIP_STATS, MAX_PLANET_POPULATION } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
-import HelpModal from './components/HelpModal';
+import HelpModal, { HelpTab } from './components/HelpModal';
 import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
 import IngestModal from './components/IngestModal';
@@ -29,6 +29,7 @@ const App: React.FC = () => {
   const [selectedType, setSelectedType] = useState<'PLANET' | 'SHIP' | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [helpTab, setHelpTab] = useState<HelpTab>('GOAL');
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
@@ -236,6 +237,11 @@ const App: React.FC = () => {
     setSelectedId(id); setSelectedType(type);
   };
 
+  const openHelpAt = (tab: HelpTab) => {
+    setHelpTab(tab);
+    setIsHelpOpen(true);
+  };
+
   const selectedPlanet = useMemo(() => selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null, [selectedId, selectedType, gameState.planets]);
   const selectedShip = useMemo(() => selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null, [selectedId, selectedType, gameState.ships]);
   const economyStats = useMemo(() => {
@@ -284,7 +290,7 @@ const App: React.FC = () => {
 
          {viewMode === 'PLAYER' && (
             <div className="flex items-center gap-4 bg-slate-900/80 px-4 py-1.5 rounded-2xl border border-white/10 backdrop-blur-xl shadow-lg">
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1.5" onClick={() => openHelpAt('ECONOMY')}>
                    <span className="text-amber-400 text-xs">💰</span>
                    <span className="text-sm font-black text-amber-100">{economyStats.credits}</span>
                 </div>
@@ -304,7 +310,7 @@ const App: React.FC = () => {
                 <button onClick={() => setIsIngestModalOpen(true)} className="w-9 h-9 rounded-xl bg-emerald-600/20 flex items-center justify-center text-sm border border-emerald-500/20 active:bg-emerald-600/40" title="Receive Orders">📡</button>
               </>
             ) : (
-              <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/10 active:bg-white/10">?</button>
+              <button onClick={() => openHelpAt('GOAL')} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/10 active:bg-white/10">?</button>
             )}
          </div>
       </div>
@@ -338,11 +344,13 @@ const App: React.FC = () => {
         )}
 
         {viewMode === 'PLAYER' && (
-           <div className={`absolute z-[120] flex pointer-events-none transition-all duration-300 ${isLandscape ? 'bottom-6 right-6 flex-col items-end gap-3' : 'bottom-4 left-4 right-4 justify-between items-end'}`}>
-              <div className="pointer-events-auto flex items-end gap-3 w-full justify-between">
-                  <button onClick={() => setIsAdvisorOpen(true)} className="w-16 h-16 bg-cyan-500 rounded-3xl flex items-center justify-center text-4xl shadow-2xl shadow-cyan-500/40 active:scale-90 border-b-4 border-cyan-700">❂</button>
-                  <button onClick={submitOrdersToHost} className="flex-1 max-w-[200px] bg-white text-black h-16 rounded-3xl font-black text-[12px] uppercase tracking-widest shadow-2xl transition-all active:scale-95 border-b-4 border-slate-300 flex items-center justify-center gap-2">
-                    <span>PUSH ORDERS</span>
+           <div className={`absolute z-[120] flex pointer-events-none transition-all duration-300 ${isLandscape ? 'bottom-6 right-6 flex-col items-end gap-3' : 'bottom-4 left-4 right-4 justify-center items-end'}`}>
+              <div className="pointer-events-auto flex items-end gap-2 bg-slate-900/60 backdrop-blur-2xl p-2 rounded-[2.5rem] border border-white/10 shadow-2xl">
+                  <button onClick={() => setIsAdvisorOpen(true)} className="w-14 h-14 bg-cyan-500 rounded-3xl flex items-center justify-center text-3xl shadow-lg active:scale-90 border-b-4 border-cyan-700">❂</button>
+                  <button onClick={() => openHelpAt('INTERFACE')} className="w-14 h-14 bg-slate-800 rounded-3xl flex items-center justify-center text-2xl shadow-lg active:scale-90 border-b-4 border-slate-950">🛰️</button>
+                  <button onClick={() => openHelpAt('ECONOMY')} className="w-14 h-14 bg-slate-800 rounded-3xl flex items-center justify-center text-2xl shadow-lg active:scale-90 border-b-4 border-slate-950">💎</button>
+                  <button onClick={submitOrdersToHost} className="px-6 h-14 bg-white text-black rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all active:scale-95 border-b-4 border-slate-300 flex items-center justify-center gap-2">
+                    <span className="hidden sm:inline">PUSH ORDERS</span>
                     <span className="text-xl">📡</span>
                   </button>
               </div>
@@ -392,11 +400,11 @@ const App: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mt-6">
-                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5">
+                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5" onClick={() => openHelpAt('ECONOMY')}>
                             <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Mines</span>
                             <span className="text-lg font-black">{selectedPlanet.mines}</span>
                           </div>
-                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5">
+                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5" onClick={() => openHelpAt('ECONOMY')}>
                             <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Fact.</span>
                             <span className="text-lg font-black">{selectedPlanet.factories}</span>
                           </div>
@@ -472,7 +480,13 @@ const App: React.FC = () => {
       </main>
 
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
-      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
+      <HelpModal 
+        gameState={gameState} 
+        playerRole={playerRole} 
+        isOpen={isHelpOpen} 
+        initialTab={helpTab}
+        onClose={() => setIsHelpOpen(false)} 
+      />
       <IngestModal isOpen={isIngestModalOpen} onClose={() => setIsIngestModalOpen(false)} onIngest={(data) => {
           try {
             const raw = data.replace('COMMAND_DATA:', '');
@@ -482,7 +496,7 @@ const App: React.FC = () => {
                 const order = orders.ships.find((o:any) => o.id === s.id);
                 return order ? { ...s, status: 'MOVING', targetPlanetId: order.t, currentPlanetId: undefined, cargoPeople: order.cp_p !== undefined ? order.cp_p : s.cargoPeople } : s;
               });
-              const nextPlanets = prev.map(p => {
+              const nextPlanets = prev.planets.map(p => {
                 const order = orders.builds.find((o:any) => o.id === p.id);
                 return order ? { ...p, mines: order.m, factories: order.f, population: order.pop !== undefined ? order.pop : p.population } : p;
               });
