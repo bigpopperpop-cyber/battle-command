@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType, AiDifficulty } from './types';
-import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS, SHIP_STATS, MAX_PLANET_POPULATION } from './gameLogic';
+import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS, SHIP_STATS, MAX_PLANET_POPULATION, MAX_FACTORIES, MAX_MINES } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import HelpModal, { HelpTab } from './components/HelpModal';
@@ -124,8 +124,8 @@ const App: React.FC = () => {
           moves.planetOrders.forEach((order: any) => {
             const planet = nextPlanets.find(p => p.id === order.planetId);
             if (planet && nextCredits[aiId] >= 100) {
-              nextCredits[aiId] -= 100;
-              if (order.build === 'MINE') planet.mines++; else planet.factories++;
+              if (order.build === 'MINE' && planet.mines < MAX_MINES) { planet.mines++; nextCredits[aiId] -= 100; }
+              else if (order.build === 'FACTORY' && planet.factories < MAX_FACTORIES) { planet.factories++; nextCredits[aiId] -= 100; }
             }
           });
         }
@@ -145,19 +145,22 @@ const App: React.FC = () => {
       }
     });
 
-    // Population Growth
+    // 1. Population Growth Phase (+1 per turn, cap 5)
     nextPlanets.forEach(p => {
-      if (p.owner !== 'NEUTRAL') p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
+      if (p.owner !== 'NEUTRAL') {
+        p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
+      }
     });
 
-    // Conflict Resolution
+    // 2. Conflict & Bombardment Phase
     nextPlanets.forEach(planet => {
-      const orbitingShips = nextShips.filter(s => s.currentPlanetId === planet.id);
-      const owners = Array.from(new Set(orbitingShips.map(s => s.owner)));
+      const survivors = nextShips.filter(s => s.currentPlanetId === planet.id && s.hp > 0);
+      const owners = Array.from(new Set(survivors.map(s => s.owner)));
       
+      // Fleet vs Fleet Battle
       if (owners.length > 1) {
         newLogs.push(`⚔️ Skirmish at ${planet.name}`);
-        const strengths = owners.map(o => ({ owner: o, power: orbitingShips.filter(s => s.owner === o).reduce((a, s) => a + s.attack + (s.hp / 10), 0) })).sort((a,b) => a.power - b.power);
+        const strengths = owners.map(o => ({ owner: o, power: survivors.filter(s => s.owner === o).reduce((a, s) => a + s.attack + (s.hp / 10), 0) })).sort((a,b) => a.power - b.power);
         const underdog = strengths[0];
         const topDog = strengths[strengths.length-1];
         
@@ -168,12 +171,12 @@ const App: React.FC = () => {
         }
 
         owners.forEach(atkId => {
-          const myFleet = orbitingShips.filter(s => s.owner === atkId);
+          const myFleet = survivors.filter(s => s.owner === atkId);
           let totalAtk = myFleet.reduce((sum, s) => sum + s.attack, 0);
           if (kirk && atkId === underdog.owner) totalAtk *= 6;
           
           const targets = owners.filter(o => o !== atkId);
-          const targetFleet = orbitingShips.filter(s => s.owner === targets[0]);
+          const targetFleet = survivors.filter(s => s.owner === targets[0]);
           if (targetFleet.length > 0) {
             const victim = targetFleet[Math.floor(Math.random() * targetFleet.length)];
             victim.hp -= totalAtk;
@@ -182,32 +185,42 @@ const App: React.FC = () => {
         });
       }
 
-      nextShips = nextShips.filter(s => s.hp > 0);
-      const survivors = nextShips.filter(s => s.currentPlanetId === planet.id);
-      const hostiles = survivors.filter(s => s.owner !== planet.owner && s.type === 'WARSHIP');
+      // 3. Bombardment Phase (1 person per warship)
+      const freshSurvivors = nextShips.filter(s => s.currentPlanetId === planet.id && s.hp > 0);
+      const hostileWarships = freshSurvivors.filter(s => s.owner !== planet.owner && s.type === 'WARSHIP');
       
-      if (hostiles.length > 0 && planet.owner !== 'NEUTRAL') {
-        planet.population = Math.max(0, planet.population - hostiles.length);
-        newLogs.push(`💣 ${planet.name} bombardment!`);
+      if (hostileWarships.length > 0 && planet.owner !== 'NEUTRAL') {
+        const casualities = Math.min(planet.population, hostileWarships.length);
+        planet.population -= casualities;
+        if (casualities > 0) newLogs.push(`💣 ${planet.name}: ${casualities} citizens killed in bombardment.`);
       }
 
+      // 4. Conquest Phase (If pop 0, hostile takes over)
       if (planet.population <= 0) {
-        const conquerors = survivors.filter(s => s.owner !== planet.owner);
+        const conquerors = freshSurvivors.filter(s => s.owner !== planet.owner);
         if (conquerors.length > 0) {
           planet.owner = conquerors[0].owner;
-          planet.population = 1;
+          planet.population = 1; // Base population for conqueror
+          planet.mines = Math.floor(planet.mines / 2); // Civil unrest destroys half of buildings
+          planet.factories = Math.floor(planet.factories / 2);
           newLogs.push(`🚩 ${planet.name} conquered by ${planet.owner}`);
         } else if (planet.owner !== 'NEUTRAL') {
           planet.owner = 'NEUTRAL';
-          newLogs.push(`🌑 ${planet.name} dark.`);
+          planet.mines = 0; planet.factories = 0;
+          newLogs.push(`🌑 ${planet.name} went dark.`);
         }
       }
 
+      // 5. Economy Generation
       if (planet.owner !== 'NEUTRAL') {
-        nextCredits[planet.owner] = (nextCredits[planet.owner] || 0) + (planet.mines * 50) + (planet.factories * 20) + (planet.population * 50);
+        const inc = (planet.mines * 50) + (planet.factories * 20) + (planet.population * 50);
+        nextCredits[planet.owner] = (nextCredits[planet.owner] || 0) + inc;
         planet.defense = Math.min(planet.maxDefense, planet.defense + 10);
       }
     });
+
+    // Final cleanup of destroyed ships
+    nextShips = nextShips.filter(s => s.hp > 0);
 
     setGameState(prev => ({
       ...prev,
@@ -244,6 +257,7 @@ const App: React.FC = () => {
 
   const selectedPlanet = useMemo(() => selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null, [selectedId, selectedType, gameState.planets]);
   const selectedShip = useMemo(() => selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null, [selectedId, selectedType, gameState.ships]);
+  
   const economyStats = useMemo(() => {
     const role = playerRole || 'P1';
     const myP = gameState.planets.filter(p => p.owner === role);
@@ -255,7 +269,7 @@ const App: React.FC = () => {
     setGameState(prev => {
       const p = prev.planets.find(p => p.id === pId);
       const s = prev.ships.find(s => s.id === sId);
-      if (p && s && p.population > 0 && s.cargoPeople < s.maxPeopleCargo) {
+      if (p && s && p.population > 1 && s.cargoPeople < s.maxPeopleCargo) {
         return { ...prev, planets: prev.planets.map(pl => pl.id === pId ? {...pl, population: pl.population-1} : pl), ships: prev.ships.map(sh => sh.id === sId ? {...sh, cargoPeople: sh.cargoPeople+1} : sh) };
       }
       return prev;
@@ -400,30 +414,68 @@ const App: React.FC = () => {
                         </div>
 
                         <div className="grid grid-cols-2 gap-3 mt-6">
-                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5" onClick={() => openHelpAt('ECONOMY')}>
-                            <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Mines</span>
+                          <button 
+                             disabled={selectedPlanet.mines >= MAX_MINES || economyStats.credits < 100 || selectedPlanet.owner !== playerRole}
+                             onClick={() => {
+                               setGameState(prev => ({
+                                 ...prev,
+                                 playerCredits: { ...prev.playerCredits, [playerRole!]: prev.playerCredits[playerRole!] - 100 },
+                                 planets: prev.planets.map(p => p.id === selectedPlanet.id ? { ...p, mines: p.mines + 1 } : p)
+                               }));
+                             }}
+                             className="bg-white/5 p-4 rounded-2xl text-center border border-white/5 disabled:opacity-20 transition-all active:scale-95"
+                          >
+                            <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Mines ({selectedPlanet.mines}/{MAX_MINES})</span>
                             <span className="text-lg font-black">{selectedPlanet.mines}</span>
-                          </div>
-                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5" onClick={() => openHelpAt('ECONOMY')}>
-                            <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Fact.</span>
+                            <span className="block text-[8px] text-amber-500 mt-1">100 Cr</span>
+                          </button>
+                          <button 
+                             disabled={selectedPlanet.factories >= MAX_FACTORIES || economyStats.credits < 100 || selectedPlanet.owner !== playerRole}
+                             onClick={() => {
+                               setGameState(prev => ({
+                                 ...prev,
+                                 playerCredits: { ...prev.playerCredits, [playerRole!]: prev.playerCredits[playerRole!] - 100 },
+                                 planets: prev.planets.map(p => p.id === selectedPlanet.id ? { ...p, factories: p.factories + 1 } : p)
+                               }));
+                             }}
+                             className="bg-white/5 p-4 rounded-2xl text-center border border-white/5 disabled:opacity-20 transition-all active:scale-95"
+                          >
+                            <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Fact. ({selectedPlanet.factories}/{MAX_FACTORIES})</span>
                             <span className="text-lg font-black">{selectedPlanet.factories}</span>
-                          </div>
+                            <span className="block text-[8px] text-cyan-500 mt-1">100 Cr</span>
+                          </button>
                         </div>
                     </div>
 
                     {viewMode === 'PLAYER' && selectedPlanet.owner === playerRole && (
                       <div className="space-y-2">
-                        <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center mb-1">Production Hub</h4>
+                        <div className="flex items-center justify-between mb-1">
+                          <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Production Hub</h4>
+                          {selectedPlanet.factories === 0 && <span className="text-[8px] text-red-500 font-black animate-pulse">FACTORY REQUIRED</span>}
+                        </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                           {['SCOUT', 'FREIGHTER', 'WARSHIP'].map(type => (
-                            <button key={type} onClick={() => {
-                              const cost = SHIP_COSTS[type as ShipType];
-                              if (gameState.playerCredits[playerRole!] >= cost) {
-                                 const stats = SHIP_STATS[type as ShipType];
-                                 const newShip: Ship = { id: `s-${Date.now()}`, name: `${gameState.playerNames[playerRole!]} ${type}`, type: type as ShipType, owner: playerRole!, x: selectedPlanet!.x, y: selectedPlanet!.y, currentPlanetId: selectedPlanet!.id, cargo: 0, maxCargo: stats.cargo, cargoPeople: 0, maxPeopleCargo: stats.people, hp: stats.hp, maxHp: stats.hp, attack: stats.attack, speed: stats.speed, status: 'ORBITING' };
-                                 setGameState(p => ({...p, playerCredits: {...p.playerCredits, [playerRole!]: p.playerCredits[playerRole!]-cost}, ships: [...p.ships, newShip]}));
-                              }
-                            }} className="p-4 bg-slate-950/80 rounded-2xl border border-white/10 flex items-center justify-between active:bg-cyan-900/20 transition-all">
+                            <button 
+                              key={type} 
+                              disabled={selectedPlanet.factories === 0 || gameState.playerCredits[playerRole!] < SHIP_COSTS[type as ShipType]}
+                              onClick={() => {
+                                const cost = SHIP_COSTS[type as ShipType];
+                                const stats = SHIP_STATS[type as ShipType];
+                                const newShip: Ship = { 
+                                  id: `s-${Date.now()}`, 
+                                  name: `${gameState.playerNames[playerRole!]} ${type}`, 
+                                  type: type as ShipType, 
+                                  owner: playerRole!, 
+                                  x: selectedPlanet!.x, y: selectedPlanet!.y, 
+                                  currentPlanetId: selectedPlanet!.id, 
+                                  cargo: 0, maxCargo: stats.cargo, 
+                                  cargoPeople: 0, maxPeopleCargo: stats.people, 
+                                  hp: stats.hp, maxHp: stats.hp, 
+                                  attack: stats.attack, speed: stats.speed, 
+                                  status: 'ORBITING' 
+                                };
+                                setGameState(p => ({...p, playerCredits: {...p.playerCredits, [playerRole!]: p.playerCredits[playerRole!]-cost}, ships: [...p.ships, newShip]}));
+                            }} className="p-4 bg-slate-950/80 rounded-2xl border border-white/10 flex items-center justify-between disabled:opacity-20 transition-all active:scale-95">
                               <span className="text-lg">{type === 'SCOUT' ? '🚀' : type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
                               <div className="flex flex-col items-end">
                                  <span className="text-[10px] font-black uppercase">{type}</span>
@@ -462,8 +514,8 @@ const App: React.FC = () => {
                        <div className="space-y-3">
                          {selectedShip.type === 'FREIGHTER' && selectedShip.currentPlanetId && (
                             <div className="grid grid-cols-2 gap-2">
-                               <button disabled={selectedShip.cargoPeople >= selectedShip.maxPeopleCargo} onClick={() => handleLoadPerson(selectedShip.id, selectedShip.currentPlanetId!)} className="py-3 bg-amber-500/20 border border-amber-500/30 rounded-2xl text-[9px] font-black uppercase text-amber-400 disabled:opacity-20 active:scale-95">Load 👤</button>
-                               <button disabled={selectedShip.cargoPeople === 0} onClick={() => handleUnloadPerson(selectedShip.id, selectedShip.currentPlanetId!)} className="py-3 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl text-[9px] font-black uppercase text-emerald-400 disabled:opacity-20 active:scale-95">Drop 👤</button>
+                               <button disabled={selectedShip.cargoPeople >= selectedShip.maxPeopleCargo || (gameState.planets.find(p => p.id === selectedShip.currentPlanetId)?.population || 0) <= 1} onClick={() => handleLoadPerson(selectedShip.id, selectedShip.currentPlanetId!)} className="py-3 bg-amber-500/20 border border-amber-500/30 rounded-2xl text-[9px] font-black uppercase text-amber-400 disabled:opacity-20 active:scale-95">Load 👤</button>
+                               <button disabled={selectedShip.cargoPeople === 0 || (gameState.planets.find(p => p.id === selectedShip.currentPlanetId)?.population || 0) >= MAX_PLANET_POPULATION} onClick={() => handleUnloadPerson(selectedShip.id, selectedShip.currentPlanetId!)} className="py-3 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl text-[9px] font-black uppercase text-emerald-400 disabled:opacity-20 active:scale-95">Drop 👤</button>
                             </div>
                          )}
                          <div className="p-4 bg-cyan-600/10 border border-cyan-500/20 rounded-2xl text-center">

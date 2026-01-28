@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GameState, Owner, Planet, Ship } from '../types';
-import { PLAYER_COLORS, SHIP_STATS, MAX_PLANET_POPULATION } from '../gameLogic';
+import { PLAYER_COLORS, SHIP_STATS, MAX_PLANET_POPULATION, MAX_FACTORIES, MAX_MINES } from '../gameLogic';
 
 export type HelpTab = 'GOAL' | 'INTERFACE' | 'ECONOMY' | 'COMMS';
 
@@ -16,7 +16,6 @@ interface HelpModalProps {
 const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playerRole, initialTab = 'GOAL' }) => {
   const [activeTab, setActiveTab] = useState<HelpTab>(initialTab);
 
-  // Sync tab when initialTab changes (e.g. clicking different hub buttons)
   useEffect(() => {
     if (isOpen) setActiveTab(initialTab);
   }, [isOpen, initialTab]);
@@ -51,7 +50,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
           <div className="flex justify-between items-start mb-6">
             <div>
               <h2 className="text-3xl font-bold text-white italic tracking-tight">COMMAND CENTER</h2>
-              <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em]">Empire Intelligence // Relay v2.5</p>
+              <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.3em]">Empire Intelligence // Relay v3.0</p>
             </div>
             <button onClick={onClose} className="w-10 h-10 rounded-2xl hover:bg-white/10 flex items-center justify-center text-slate-500 hover:text-white transition-all">✕</button>
           </div>
@@ -66,7 +65,6 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
 
         <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 bg-slate-950/50 custom-scrollbar">
           
-          {/* BRIDGE TAB: Fleet Intel */}
           {activeTab === 'INTERFACE' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
                {isPlayer ? (
@@ -81,9 +79,16 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
                         <span className="text-xl font-bold text-cyan-400">{myShips.filter(s => s.status === 'MOVING').length}</span>
                      </div>
                      <div className="bg-slate-900/80 p-4 rounded-2xl border border-white/5 text-center">
-                        <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Combat Ready</span>
+                        <span className="block text-[8px] font-black text-slate-500 uppercase mb-1">Siege Ready</span>
                         <span className="text-xl font-bold text-red-500">{myShips.filter(s => s.type === 'WARSHIP').length}</span>
                      </div>
+                   </div>
+
+                   <div className="p-4 bg-red-950/20 border border-red-500/30 rounded-2xl">
+                     <h5 className="text-red-400 font-black text-[10px] uppercase mb-1">Bombardment Intel</h5>
+                     <p className="text-[11px] text-slate-300 leading-relaxed">
+                       Every enemy <span className="text-white font-bold italic">Warship</span> in orbit destroys <span className="text-white font-bold">1 citizen</span> per turn. Planets are captured when population hits 0.
+                     </p>
                    </div>
 
                    <div className="space-y-2">
@@ -120,7 +125,6 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
             </div>
           )}
 
-          {/* ECONOMY TAB: Fiscal Intel */}
           {activeTab === 'ECONOMY' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               {isPlayer ? (
@@ -138,13 +142,24 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
                     </div>
                   </div>
 
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/5">
+                      <h5 className="text-cyan-400 font-black text-[10px] uppercase mb-1">Factories ({MAX_FACTORIES} Max)</h5>
+                      <p className="text-[11px] text-slate-400">Determines shipbuilding speed and capacity.</p>
+                    </div>
+                    <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/5">
+                      <h5 className="text-amber-400 font-black text-[10px] uppercase mb-1">Mines ({MAX_MINES} Max)</h5>
+                      <p className="text-[11px] text-slate-400">Major source of turn-based credit income.</p>
+                    </div>
+                  </div>
+
                   <div className="space-y-2">
                     <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Colonial Holdings ({myPlanets.length})</h4>
                     {myPlanets.map(p => (
                       <div key={p.id} className="grid grid-cols-4 gap-2 p-4 bg-slate-900/50 rounded-2xl border border-white/5">
                          <div className="col-span-2">
                             <p className="text-xs font-bold text-white truncate">{p.name}</p>
-                            <p className="text-[9px] font-black text-slate-500 uppercase">👤 {p.population} Citizens</p>
+                            <p className="text-[9px] font-black text-slate-500 uppercase">👤 {p.population} / {MAX_PLANET_POPULATION} Citizens</p>
                          </div>
                          <div className="text-center">
                             <p className="text-[8px] font-black text-slate-600 uppercase">Mines</p>
@@ -163,31 +178,43 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
                   <div className="p-5 bg-slate-900/80 rounded-2xl border border-white/5">
                     <div className="text-2xl mb-2">🏗️</div>
                     <h5 className="text-amber-400 font-bold text-sm mb-1">Mines</h5>
-                    <p className="text-xs text-slate-400">Increases credit income per turn.</p>
+                    <p className="text-xs text-slate-400">Increases credit income per turn. Max 10 per planet.</p>
                   </div>
                   <div className="p-5 bg-slate-900/80 rounded-2xl border border-white/5">
                     <div className="text-2xl mb-2">🏭</div>
                     <h5 className="text-cyan-400 font-bold text-sm mb-1">Factories</h5>
-                    <p className="text-xs text-slate-400">Powers your planetary shipyard.</p>
+                    <p className="text-xs text-slate-400">Powers shipyards. Max 5 per planet.</p>
                   </div>
                 </div>
               )}
             </div>
           )}
 
-          {/* MISSION TAB */}
           {activeTab === 'GOAL' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <div className="p-6 bg-cyan-500/5 border border-cyan-500/20 rounded-3xl">
-                <h4 className="text-cyan-400 font-black text-xs uppercase tracking-widest mb-2">Prime Objective</h4>
-                <p className="text-sm text-slate-300 leading-relaxed">
-                  Your mission is <span className="text-white font-bold">Galactic Dominance</span>. Control the majority of the sectors by colonizing neutral planets and out-maneuvering rival factions.
+                <h4 className="text-cyan-400 font-black text-xs uppercase tracking-widest mb-2">Population Core</h4>
+                <p className="text-sm text-slate-300 leading-relaxed mb-4">
+                  Citizens are your empire's lifeblood. Every turn, owned planets generate <span className="text-white font-bold">+1 person</span> (max 5).
                 </p>
+                <div className="space-y-2">
+                   <div className="flex gap-3">
+                     <span className="text-xl">🚢</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Transport:</span> Freighters move 2 people. Colonizing is the fastest way to expand.</p>
+                   </div>
+                   <div className="flex gap-3">
+                     <span className="text-xl">💣</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Invasion:</span> Warships kill 1 person per turn. At 0 people, the planet is captured.</p>
+                   </div>
+                   <div className="flex gap-3">
+                     <span className="text-xl">🏭</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Industry:</span> Build up to 10 Mines and 5 Factories. You need factories to build new ships.</p>
+                   </div>
+                </div>
               </div>
             </div>
           )}
 
-          {/* COMMS TAB */}
           {activeTab === 'COMMS' && (
             <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
                <div className="p-6 bg-slate-900/80 rounded-3xl border border-cyan-500/20">
