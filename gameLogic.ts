@@ -1,9 +1,9 @@
 
-import { Planet, Ship, GameState, Owner } from './types';
+import { Planet, Ship, GameState, Owner, ShipType } from './types';
 
 export const GRID_SIZE = 1200;
 export const PLANET_COUNT = 24;
-export const MIN_PLANET_DISTANCE = 180; // Ensuring planets don't touch or crowd each other
+export const MIN_PLANET_DISTANCE = 180;
 
 const PLANET_NAMES = [
   "Rigel VII", "Betelgeuse Prime", "Delta Pavonis", "Alpha Centauri", "Sol", 
@@ -24,8 +24,23 @@ export const PLAYER_COLORS: Record<Owner, string> = {
   NEUTRAL: '#94a3b8' // Gray
 };
 
-export const SHIP_SPEEDS = { SCOUT: 120, FREIGHTER: 60, WARSHIP: 80 };
-export const SHIP_COSTS = { SCOUT: 200, FREIGHTER: 400, WARSHIP: 800 };
+export const SHIP_STATS = {
+  SCOUT: { speed: 150, hp: 60, attack: 8, cargo: 20, cost: 200 },
+  FREIGHTER: { speed: 60, hp: 180, attack: 4, cargo: 1000, cost: 400 },
+  WARSHIP: { speed: 80, hp: 450, attack: 45, cargo: 80, cost: 950 }
+};
+
+// Legacy support for App.tsx consumption
+export const SHIP_SPEEDS = { 
+  SCOUT: SHIP_STATS.SCOUT.speed, 
+  FREIGHTER: SHIP_STATS.FREIGHTER.speed, 
+  WARSHIP: SHIP_STATS.WARSHIP.speed 
+};
+export const SHIP_COSTS = { 
+  SCOUT: SHIP_STATS.SCOUT.cost, 
+  FREIGHTER: SHIP_STATS.FREIGHTER.cost, 
+  WARSHIP: SHIP_STATS.WARSHIP.cost 
+};
 
 const seededRandom = (a: number) => {
   return function() {
@@ -49,40 +64,29 @@ export const generateInitialState = (
   
   for (let i = 0; i < PLANET_COUNT; i++) {
     let owner: Owner = 'NEUTRAL';
-    if (i < playerCount) {
-      owner = `P${i + 1}` as Owner;
-    }
+    if (i < playerCount) owner = `P${i + 1}` as Owner;
 
-    let x = 0, y = 0;
-    let attempts = 0;
-    let isTooClose = true;
-
-    // Keep generating coordinates until we find a spot far enough from others
+    let x = 0, y = 0, attempts = 0, isTooClose = true;
     while (isTooClose && attempts < 100) {
       x = Math.floor(rnd() * (GRID_SIZE - 200) + 100);
       y = Math.floor(rnd() * (GRID_SIZE - 200) + 100);
-      
-      isTooClose = planets.some(p => {
-        const dx = p.x - x;
-        const dy = p.y - y;
-        const distance = Math.sqrt(dx * dx + dy * dy);
-        return distance < MIN_PLANET_DISTANCE;
-      });
-      
+      isTooClose = planets.some(p => Math.sqrt((p.x-x)**2 + (p.y-y)**2) < MIN_PLANET_DISTANCE);
       attempts++;
     }
+
+    const maxDef = owner !== 'NEUTRAL' ? 500 : 100;
 
     planets.push({
       id: `p-${i}`,
       name: PLANET_NAMES[i],
-      x,
-      y,
+      x, y,
       owner,
       population: owner !== 'NEUTRAL' ? 1000 : 0,
       resources: 500,
       factories: owner !== 'NEUTRAL' ? 5 : 0,
       mines: owner !== 'NEUTRAL' ? 5 : 0,
-      defense: owner !== 'NEUTRAL' ? 10 : 0,
+      defense: maxDef,
+      maxDefense: maxDef,
     });
   }
 
@@ -94,29 +98,27 @@ export const generateInitialState = (
 
   for (let i = 1; i <= playerCount; i++) {
     const pId = `P${i}` as Owner;
-    playerCredits[pId] = 1000;
-    if (!playerNames[pId]) {
-      playerNames[pId] = `Empire of ${pId}`;
-    }
+    playerCredits[pId] = 1200; // Starting boost
+    if (!playerNames[pId]) playerNames[pId] = `Empire ${pId}`;
 
     const home = planets.find(p => p.owner === pId)!;
-    
-    if (i > humanCount) {
-      aiPlayers.push(pId);
-    }
+    if (i > humanCount) aiPlayers.push(pId);
 
+    const stats = SHIP_STATS.SCOUT;
     ships.push({
       id: `s-${pId}-0`,
-      name: `${playerNames[pId]} Explorer`,
+      name: `${playerNames[pId]} Vanguard`,
       type: 'SCOUT',
       owner: pId,
       x: home.x,
       y: home.y,
       currentPlanetId: home.id,
       cargo: 0,
-      maxCargo: 50,
-      hp: 100,
-      maxHp: 100,
+      maxCargo: stats.cargo,
+      hp: stats.hp,
+      maxHp: stats.hp,
+      attack: stats.attack,
+      speed: stats.speed,
       status: 'ORBITING'
     });
   }
@@ -128,7 +130,7 @@ export const generateInitialState = (
     ships,
     playerCredits,
     playerNames,
-    logs: ["Commander, Galactic chart generated. No sector overlaps detected."],
+    logs: ["Commander, sector data synchronized. Ships standing by for warp commands."],
     playerCount,
     aiPlayers,
     isHost: true,

@@ -11,7 +11,8 @@ export interface Planet {
   resources: number; 
   factories: number;
   mines: number;
-  defense: number;
+  defense: number; // Planetary Defense HP
+  maxDefense: number;
 }
 
 export type ShipType = 'SCOUT' | 'FREIGHTER' | 'WARSHIP';
@@ -29,6 +30,8 @@ export interface Ship {
   maxCargo: number;
   hp: number;
   maxHp: number;
+  attack: number;
+  speed: number;
   status: 'IDLE' | 'MOVING' | 'ORBITING';
 }
 
