@@ -6,43 +6,18 @@ import { PLAYER_COLORS } from '../gameLogic';
 interface InviteModalProps {
   isOpen: boolean;
   onClose: () => void;
-  joinUrl: string;
+  frequency: string;
   gameState: GameState;
 }
 
-const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl, gameState }) => {
+const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, frequency, gameState }) => {
   const [selectedP, setSelectedP] = useState<Owner>('P1');
 
   if (!isOpen) return null;
 
-  // Include the role and the base state hash in the join link
-  const stateHash = btoa(JSON.stringify({
-    sd: gameState.seed, 
-    rd: gameState.round, 
-    pc: gameState.playerCount, 
-    ai: gameState.aiPlayers, 
-    cr: gameState.playerCredits, 
-    nm: gameState.playerNames, 
-    ps: gameState.planets.map(p => [p.owner, p.mines, p.factories]), 
-    ss: gameState.ships.map(s => ({id: s.id, n: s.name, t: s.type, o: s.owner, x: Math.round(s.x), y: Math.round(s.y), st: s.status, tp: s.targetPlanetId, cp: s.currentPlanetId}))
-  }));
-  
-  const empireJoinUrl = `${joinUrl}?role=${selectedP}#join=${stateHash}`;
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&color=000000&bgcolor=ffffff&margin=20&ecc=L&data=${encodeURIComponent(empireJoinUrl)}`;
-
-  const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: `Command ${gameState.playerNames[selectedP]}`,
-          text: `Join the War Room! Take control of the ${gameState.playerNames[selectedP]} from your phone.`,
-          url: empireJoinUrl
-        });
-      } catch (err) { console.log(err); }
-    } else {
-      navigator.clipboard.writeText(empireJoinUrl);
-      alert("Empire Data Link Copied!");
-    }
+  const handleCopyFreq = () => {
+    navigator.clipboard.writeText(frequency);
+    alert("Frequency Copied!");
   };
 
   return (
@@ -52,10 +27,18 @@ const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl, gam
       <div className="relative w-full max-w-lg glass-card rounded-[4rem] border-cyan-500/20 p-10 shadow-[0_0_120px_rgba(34,211,238,0.15)] animate-in zoom-in-95 duration-300">
         <div className="text-center mb-8">
           <h2 className="text-4xl font-bold text-white mb-2 italic">EMPIRE RELAY</h2>
-          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em]">Subspace Communication Hub</p>
+          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em]">Subspace Frequency Configuration</p>
         </div>
 
-        <div className="grid grid-cols-4 gap-2 mb-10">
+        <div className="bg-slate-900/80 p-8 rounded-[3rem] border border-white/5 text-center mb-8">
+           <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-2">Current Frequency</p>
+           <h3 className="text-6xl font-black text-cyan-400 tracking-tighter mb-4 animate-pulse-cyan">{frequency} <span className="text-xl text-slate-600">MHz</span></h3>
+           <p className="text-xs text-slate-400 max-w-[200px] mx-auto leading-relaxed">
+             Ask your allies to enter this code on their bridge to link their systems.
+           </p>
+        </div>
+
+        <div className="grid grid-cols-4 gap-2 mb-8">
            {Array.from({length: gameState.playerCount}).map((_, i) => {
              const pId = `P${i+1}` as Owner;
              const isAi = gameState.aiPlayers.includes(pId);
@@ -75,19 +58,9 @@ const InviteModal: React.FC<InviteModalProps> = ({ isOpen, onClose, joinUrl, gam
            })}
         </div>
 
-        <div className="flex flex-col items-center gap-8 mb-10">
-          <div className="p-5 bg-white rounded-[3rem] border-[6px] border-white shadow-2xl">
-            <img src={qrUrl} alt="Join QR" className="w-56 h-56" style={{ imageRendering: 'pixelated' }} />
-          </div>
-          <div className="text-center px-6">
-            <p className="text-xs text-white font-black uppercase tracking-widest mb-2">TARGET: {gameState.playerNames[selectedP]}</p>
-            <p className="text-[10px] text-slate-500 leading-relaxed italic">Scan this code to link a tactical device to this specific empire. This link contains the current galactic snapshot.</p>
-          </div>
-        </div>
-
         <div className="space-y-3">
-          <button onClick={handleShare} className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl shadow-cyan-900/40 transition-all active:scale-95">
-            Share Link with Ally
+          <button onClick={handleCopyFreq} className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl shadow-cyan-900/40 transition-all active:scale-95">
+            Copy Frequency Code
           </button>
           <button onClick={onClose} className="w-full py-4 text-slate-500 hover:text-white text-[10px] font-black uppercase tracking-widest">
             Back to Bridge

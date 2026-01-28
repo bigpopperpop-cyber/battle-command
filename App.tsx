@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { GameState, Planet, Ship, Owner, ShipType, AiDifficulty } from './types';
 import { generateInitialState, SHIP_SPEEDS, PLAYER_COLORS, SHIP_COSTS, SHIP_STATS, MAX_PLANET_POPULATION, MAX_FACTORIES, MAX_MINES } from './gameLogic';
 import MapView from './components/MapView';
@@ -8,9 +8,11 @@ import HelpModal, { HelpTab } from './components/HelpModal';
 import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
 import IngestModal from './components/IngestModal';
+import OrderQrModal from './components/OrderQrModal';
 import { getAiMoves } from './services/geminiService';
+import { Peer, DataConnection } from 'peerjs';
 
-const SAVE_KEY = 'stellar_commander_save_v3';
+const SAVE_KEY = 'stellar_commander_save_v4';
 const KIRK_CHANCE = 0.15; 
 
 const App: React.FC = () => {
@@ -33,74 +35,114 @@ const App: React.FC = () => {
   const [isNewGameModalOpen, setIsNewGameModalOpen] = useState(false);
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [isIngestModalOpen, setIsIngestModalOpen] = useState(false);
+  const [isOrderQrModalOpen, setIsOrderQrModalOpen] = useState(false);
+  const [currentOrderCode, setCurrentOrderCode] = useState('');
+  
   const [isProcessing, setIsProcessing] = useState(false);
-  const [relayStatus, setRelayStatus] = useState<'CONNECTED' | 'SYNCING' | 'OFFLINE'>('CONNECTED');
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
+
+  // Networking State
+  const [peerId, setPeerId] = useState<string>('');
+  const [isLinked, setIsLinked] = useState(false);
+  const [frequency, setFrequency] = useState<string>('');
+  const peerRef = useRef<Peer | null>(null);
+  const connectionsRef = useRef<Record<string, DataConnection>>({});
+
+  // Initialize PeerJS
+  useEffect(() => {
+    // Generate a semi-predictable but short ID based on the game seed for the host
+    const idPrefix = viewMode === 'HOST' ? `SC-HOST-${gameState.seed % 10000}` : undefined;
+    const peer = new Peer(idPrefix);
+    
+    peer.on('open', (id) => {
+      setPeerId(id);
+      if (viewMode === 'HOST') setFrequency(id.split('-').pop() || '');
+    });
+
+    peer.on('connection', (conn) => {
+      conn.on('data', (data: any) => {
+        if (data && typeof data === 'string' && data.startsWith('COMMAND_DATA:')) {
+          handleIncomingOrders(data);
+        }
+      });
+      connectionsRef.current[conn.peer] = conn;
+      setIsLinked(true);
+    });
+
+    peerRef.current = peer;
+
+    return () => {
+      peer.destroy();
+    };
+  }, [viewMode, gameState.seed]);
+
+  const handleIncomingOrders = (data: string) => {
+    try {
+      const raw = data.replace('COMMAND_DATA:', '');
+      const orders = JSON.parse(atob(raw));
+      setGameState(prev => {
+        const nextShips = prev.ships.map(s => {
+          const order = orders.ships.find((o:any) => o.id === s.id);
+          return order ? { ...s, status: 'MOVING', targetPlanetId: order.t, currentPlanetId: undefined, cargoPeople: order.cp_p !== undefined ? order.cp_p : s.cargoPeople } : s;
+        });
+        const nextPlanets = prev.planets.map(p => {
+          const order = orders.builds.find((o:any) => o.id === p.id);
+          return order ? { ...p, mines: order.m, factories: order.f, population: order.pop !== undefined ? order.pop : p.population } : p;
+        });
+        return { ...prev, ships: nextShips, planets: nextPlanets, readyPlayers: Array.from(new Set([...prev.readyPlayers, orders.pId])) };
+      });
+    } catch(e) { console.error("Network Ingest Failed", e); }
+  };
+
+  const connectToHost = (hostFreq: string) => {
+    if (!peerRef.current) return;
+    const conn = peerRef.current.connect(`SC-HOST-${hostFreq}`);
+    conn.on('open', () => {
+      setIsLinked(true);
+      setFrequency(hostFreq);
+    });
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const role = params.get('role') as Owner;
+    const joinFreq = window.location.hash.match(/freq=(\d+)/)?.[1];
+    
     if (role && role.startsWith('P')) {
       setViewMode('PLAYER');
       setPlayerRole(role);
       setGameState(prev => ({ ...prev, activePlayer: role }));
+      if (joinFreq) connectToHost(joinFreq);
     }
     const handleResize = () => setIsLandscape(window.innerWidth > window.innerHeight);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  useEffect(() => {
-    const handleSync = () => {
-      const hash = window.location.hash;
-      if (!hash || !hash.startsWith('#join=')) return;
-      try {
-        const dataStr = hash.substring(6);
-        const compact = JSON.parse(atob(dataStr));
-        const baseState = generateInitialState(compact.pc, compact.ai.length, compact.sd, compact.nm, compact.dif || 'EASY');
-        baseState.round = compact.rd;
-        baseState.playerCredits = compact.cr;
-        baseState.aiPlayers = compact.ai;
-        compact.ps.forEach((pState: any, i: number) => {
-          if (baseState.planets[i]) {
-            baseState.planets[i].owner = pState[0];
-            baseState.planets[i].mines = pState[1];
-            baseState.planets[i].factories = pState[2];
-            baseState.planets[i].defense = pState[3] || 100;
-            baseState.planets[i].population = pState[4] !== undefined ? pState[4] : 1;
-          }
-        });
-        baseState.ships = compact.ss.map((s: any) => {
-          const stats = SHIP_STATS[s.t as ShipType];
-          return {
-            id: s.id, name: s.n, type: s.t, owner: s.o, x: s.x, y: s.y,
-            status: s.st, targetPlanetId: s.tp, currentPlanetId: s.cp,
-            cargo: 0, maxCargo: stats.cargo, 
-            cargoPeople: s.cp_p || 0,
-            maxPeopleCargo: stats.people,
-            hp: s.h || stats.hp, maxHp: stats.hp,
-            attack: stats.attack, speed: stats.speed
-          }
-        });
-        setGameState(prev => ({ ...baseState, activePlayer: playerRole || baseState.activePlayer }));
-        window.history.replaceState(null, "", window.location.pathname + window.location.search);
-      } catch (e) { console.error("Relay Sync Failed", e); }
-    };
-    handleSync();
-    window.addEventListener('hashchange', handleSync);
-    return () => window.removeEventListener('hashchange', handleSync);
-  }, [playerRole]);
-
-  const submitOrdersToHost = () => {
+  const submitOrdersToHost = async () => {
     const myOrders = {
       pId: playerRole,
       ships: gameState.ships.filter(s => s.owner === playerRole).map(s => ({ id: s.id, t: s.targetPlanetId, cp_p: s.cargoPeople })),
       builds: gameState.planets.filter(p => p.owner === playerRole).map(p => ({ id: p.id, m: p.mines, f: p.factories, pop: p.population }))
     };
     const code = btoa(JSON.stringify(myOrders));
-    navigator.clipboard.writeText(`COMMAND_DATA:${code}`);
-    setGameState(prev => ({ ...prev, readyPlayers: Array.from(new Set([...prev.readyPlayers, playerRole!])) }));
-    alert("Tactical Data Copied. Hand the code to your Host.");
+    const commandString = `COMMAND_DATA:${code}`;
+    
+    // Attempt Subspace Transmission
+    if (isLinked && peerRef.current) {
+      const hostId = `SC-HOST-${frequency}`;
+      const conn = peerRef.current.connect(hostId);
+      conn.on('open', () => {
+        conn.send(commandString);
+        alert("Subspace Transmission Successful! Orders received by Host.");
+        setGameState(prev => ({ ...prev, readyPlayers: Array.from(new Set([...prev.readyPlayers, playerRole!])) }));
+      });
+    } else {
+      // Fallback to manual if not linked
+      setCurrentOrderCode(commandString);
+      setIsOrderQrModalOpen(true);
+      setGameState(prev => ({ ...prev, readyPlayers: Array.from(new Set([...prev.readyPlayers, playerRole!])) }));
+    }
   };
 
   const executeTurn = async () => {
@@ -145,19 +187,16 @@ const App: React.FC = () => {
       }
     });
 
-    // 1. Population Growth Phase (+1 per turn, cap 5)
     nextPlanets.forEach(p => {
       if (p.owner !== 'NEUTRAL') {
         p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
       }
     });
 
-    // 2. Conflict & Bombardment Phase
     nextPlanets.forEach(planet => {
       const survivors = nextShips.filter(s => s.currentPlanetId === planet.id && s.hp > 0);
       const owners = Array.from(new Set(survivors.map(s => s.owner)));
       
-      // Fleet vs Fleet Battle
       if (owners.length > 1) {
         newLogs.push(`⚔️ Skirmish at ${planet.name}`);
         const strengths = owners.map(o => ({ owner: o, power: survivors.filter(s => s.owner === o).reduce((a, s) => a + s.attack + (s.hp / 10), 0) })).sort((a,b) => a.power - b.power);
@@ -185,7 +224,6 @@ const App: React.FC = () => {
         });
       }
 
-      // 3. Bombardment Phase (1 person per warship)
       const freshSurvivors = nextShips.filter(s => s.currentPlanetId === planet.id && s.hp > 0);
       const hostileWarships = freshSurvivors.filter(s => s.owner !== planet.owner && s.type === 'WARSHIP');
       
@@ -195,13 +233,12 @@ const App: React.FC = () => {
         if (casualities > 0) newLogs.push(`💣 ${planet.name}: ${casualities} citizens killed in bombardment.`);
       }
 
-      // 4. Conquest Phase (If pop 0, hostile takes over)
       if (planet.population <= 0) {
         const conquerors = freshSurvivors.filter(s => s.owner !== planet.owner);
         if (conquerors.length > 0) {
           planet.owner = conquerors[0].owner;
-          planet.population = 1; // Base population for conqueror
-          planet.mines = Math.floor(planet.mines / 2); // Civil unrest destroys half of buildings
+          planet.population = 1; 
+          planet.mines = Math.floor(planet.mines / 2); 
           planet.factories = Math.floor(planet.factories / 2);
           newLogs.push(`🚩 ${planet.name} conquered by ${planet.owner}`);
         } else if (planet.owner !== 'NEUTRAL') {
@@ -211,7 +248,6 @@ const App: React.FC = () => {
         }
       }
 
-      // 5. Economy Generation
       if (planet.owner !== 'NEUTRAL') {
         const inc = (planet.mines * 50) + (planet.factories * 20) + (planet.population * 50);
         nextCredits[planet.owner] = (nextCredits[planet.owner] || 0) + inc;
@@ -219,7 +255,6 @@ const App: React.FC = () => {
       }
     });
 
-    // Final cleanup of destroyed ships
     nextShips = nextShips.filter(s => s.hp > 0);
 
     setGameState(prev => ({
@@ -294,10 +329,10 @@ const App: React.FC = () => {
       
       <div className="absolute top-0 left-0 right-0 z-[100] h-14 bg-gradient-to-b from-slate-950/95 to-transparent flex items-center justify-between px-4 md:px-8">
          <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${relayStatus === 'CONNECTED' ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : 'bg-amber-500 animate-pulse'}`} />
+            <div className={`w-3 h-3 rounded-full ${isLinked ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : 'bg-slate-700'}`} />
             <div className="hidden sm:block">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">SECTOR SNAPSHOT</p>
-              <p className="text-[12px] font-bold text-cyan-400">ROUND {gameState.round}</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">SUBSPACE FREQUENCY</p>
+              <p className="text-[12px] font-bold text-cyan-400">{frequency ? `${frequency} MHz` : 'SCANNING...'}</p>
             </div>
             <div className="sm:hidden text-[12px] font-black text-cyan-400">R-{gameState.round}</div>
          </div>
@@ -360,23 +395,30 @@ const App: React.FC = () => {
         {viewMode === 'PLAYER' && (
            <div className={`absolute z-[120] flex pointer-events-none transition-all duration-300 ${isLandscape ? 'bottom-6 right-6 flex-col items-end gap-3' : 'bottom-4 left-4 right-4 justify-center items-end'}`}>
               <div className="pointer-events-auto flex items-end gap-2 bg-slate-900/60 backdrop-blur-2xl p-2 rounded-[2.5rem] border border-white/10 shadow-2xl">
+                  {!isLinked && (
+                    <div className="absolute bottom-full mb-4 left-1/2 -translate-x-1/2 bg-amber-500 text-black px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest animate-pulse whitespace-nowrap border-2 border-black/10">
+                       Not Linked to Host
+                    </div>
+                  )}
                   <button onClick={() => setIsAdvisorOpen(true)} className="w-14 h-14 bg-cyan-500 rounded-3xl flex items-center justify-center text-3xl shadow-lg active:scale-90 border-b-4 border-cyan-700">❂</button>
                   <button onClick={() => openHelpAt('INTERFACE')} className="w-14 h-14 bg-slate-800 rounded-3xl flex items-center justify-center text-2xl shadow-lg active:scale-90 border-b-4 border-slate-950">🛰️</button>
                   <button onClick={() => openHelpAt('ECONOMY')} className="w-14 h-14 bg-slate-800 rounded-3xl flex items-center justify-center text-2xl shadow-lg active:scale-90 border-b-4 border-slate-950">💎</button>
-                  <button onClick={submitOrdersToHost} className="px-6 h-14 bg-white text-black rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all active:scale-95 border-b-4 border-slate-300 flex items-center justify-center gap-2">
-                    <span className="hidden sm:inline">PUSH ORDERS</span>
+                  <button onClick={submitOrdersToHost} className={`px-6 h-14 rounded-3xl font-black text-[10px] uppercase tracking-widest shadow-lg transition-all active:scale-95 border-b-4 flex items-center justify-center gap-2 ${isLinked ? 'bg-emerald-600 text-white border-emerald-800' : 'bg-white text-black border-slate-300'}`}>
+                    <span>PUSH ORDERS</span>
                     <span className="text-xl">📡</span>
                   </button>
               </div>
            </div>
         )}
 
+        {/* ... (Planetary/Ship selection UI remains the same) ... */}
         <div className={`absolute transition-all duration-500 ease-out z-[130] 
           ${isLandscape 
             ? `top-20 bottom-20 left-0 w-80 ${selectedId ? 'translate-x-6' : '-translate-x-full'}` 
             : `bottom-0 left-0 right-0 ${selectedId ? 'translate-y-0' : 'translate-y-[100%]'}`
           }`}
         >
+          {/* ... Content of Selection Drawer ... */}
           <div className={`
             relative flex flex-col bg-slate-900/98 backdrop-blur-3xl border-white/10 shadow-2xl overflow-hidden
             ${isLandscape ? 'h-full rounded-[3rem] border' : 'rounded-t-[3.5rem] border-t max-h-[50vh] min-h-[40vh]'}
@@ -532,33 +574,11 @@ const App: React.FC = () => {
       </main>
 
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
-      <HelpModal 
-        gameState={gameState} 
-        playerRole={playerRole} 
-        isOpen={isHelpOpen} 
-        initialTab={helpTab}
-        onClose={() => setIsHelpOpen(false)} 
-      />
-      <IngestModal isOpen={isIngestModalOpen} onClose={() => setIsIngestModalOpen(false)} onIngest={(data) => {
-          try {
-            const raw = data.replace('COMMAND_DATA:', '');
-            const orders = JSON.parse(atob(raw));
-            setGameState(prev => {
-              const nextShips = prev.ships.map(s => {
-                const order = orders.ships.find((o:any) => o.id === s.id);
-                return order ? { ...s, status: 'MOVING', targetPlanetId: order.t, currentPlanetId: undefined, cargoPeople: order.cp_p !== undefined ? order.cp_p : s.cargoPeople } : s;
-              });
-              const nextPlanets = prev.planets.map(p => {
-                const order = orders.builds.find((o:any) => o.id === p.id);
-                return order ? { ...p, mines: order.m, factories: order.f, population: order.pop !== undefined ? order.pop : p.population } : p;
-              });
-              return { ...prev, ships: nextShips, planets: nextPlanets, readyPlayers: Array.from(new Set([...prev.readyPlayers, orders.pId])) };
-            });
-            setIsIngestModalOpen(false);
-          } catch(e) { console.error(e); }
-        }} readyPlayers={gameState.readyPlayers} />
+      <HelpModal gameState={gameState} playerRole={playerRole} isOpen={isHelpOpen} initialTab={helpTab} onClose={() => setIsHelpOpen(false)} />
+      <IngestModal isOpen={isIngestModalOpen} onClose={() => setIsIngestModalOpen(false)} onIngest={handleIncomingOrders} readyPlayers={gameState.readyPlayers} frequency={frequency} />
+      <OrderQrModal isOpen={isOrderQrModalOpen} onClose={() => setIsOrderQrModalOpen(false)} orderCode={currentOrderCode} playerName={gameState.playerNames[playerRole!] || 'Commander'} />
       <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n, d) => { setGameState(generateInitialState(p, a, undefined, n, d)); setIsNewGameModalOpen(false); setSelectedId(null); }} />
-      <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} joinUrl={`${window.location.origin}${window.location.pathname}`} gameState={gameState} />
+      <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} frequency={frequency} gameState={gameState} />
     </div>
   );
 };
