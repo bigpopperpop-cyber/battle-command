@@ -7,11 +7,11 @@ export interface Planet {
   x: number;
   y: number;
   owner: Owner;
-  population: number;
+  population: number; // Current people (0-5)
   resources: number; 
   factories: number;
   mines: number;
-  defense: number; // Planetary Defense HP
+  defense: number; 
   maxDefense: number;
 }
 
@@ -28,6 +28,8 @@ export interface Ship {
   currentPlanetId?: string;
   cargo: number;
   maxCargo: number;
+  cargoPeople: number; // Current people being transported
+  maxPeopleCargo: number; // Max people capacity
   hp: number;
   maxHp: number;
   attack: number;

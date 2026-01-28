@@ -4,6 +4,7 @@ import { Planet, Ship, GameState, Owner, ShipType } from './types';
 export const GRID_SIZE = 1200;
 export const PLANET_COUNT = 24;
 export const MIN_PLANET_DISTANCE = 180;
+export const MAX_PLANET_POPULATION = 5;
 
 const PLANET_NAMES = [
   "Rigel VII", "Betelgeuse Prime", "Delta Pavonis", "Alpha Centauri", "Sol", 
@@ -25,12 +26,11 @@ export const PLAYER_COLORS: Record<Owner, string> = {
 };
 
 export const SHIP_STATS = {
-  SCOUT: { speed: 150, hp: 60, attack: 8, cargo: 20, cost: 200 },
-  FREIGHTER: { speed: 60, hp: 180, attack: 4, cargo: 1000, cost: 400 },
-  WARSHIP: { speed: 80, hp: 450, attack: 45, cargo: 80, cost: 950 }
+  SCOUT: { speed: 180, hp: 60, attack: 5, cargo: 20, people: 0, cost: 200 },
+  FREIGHTER: { speed: 60, hp: 180, attack: 2, cargo: 1000, people: 2, cost: 400 },
+  WARSHIP: { speed: 80, hp: 450, attack: 50, cargo: 80, people: 0, cost: 950 }
 };
 
-// Legacy support for App.tsx consumption
 export const SHIP_SPEEDS = { 
   SCOUT: SHIP_STATS.SCOUT.speed, 
   FREIGHTER: SHIP_STATS.FREIGHTER.speed, 
@@ -81,10 +81,10 @@ export const generateInitialState = (
       name: PLANET_NAMES[i],
       x, y,
       owner,
-      population: owner !== 'NEUTRAL' ? 1000 : 0,
+      population: owner !== 'NEUTRAL' ? 3 : 0, // Start with 3 people
       resources: 500,
-      factories: owner !== 'NEUTRAL' ? 5 : 0,
-      mines: owner !== 'NEUTRAL' ? 5 : 0,
+      factories: owner !== 'NEUTRAL' ? 2 : 0,
+      mines: owner !== 'NEUTRAL' ? 2 : 0,
       defense: maxDef,
       maxDefense: maxDef,
     });
@@ -98,7 +98,7 @@ export const generateInitialState = (
 
   for (let i = 1; i <= playerCount; i++) {
     const pId = `P${i}` as Owner;
-    playerCredits[pId] = 1200; // Starting boost
+    playerCredits[pId] = 1500; 
     if (!playerNames[pId]) playerNames[pId] = `Empire ${pId}`;
 
     const home = planets.find(p => p.owner === pId)!;
@@ -115,6 +115,8 @@ export const generateInitialState = (
       currentPlanetId: home.id,
       cargo: 0,
       maxCargo: stats.cargo,
+      cargoPeople: 0,
+      maxPeopleCargo: stats.people,
       hp: stats.hp,
       maxHp: stats.hp,
       attack: stats.attack,
@@ -130,7 +132,7 @@ export const generateInitialState = (
     ships,
     playerCredits,
     playerNames,
-    logs: ["Commander, sector data synchronized. Ships standing by for warp commands."],
+    logs: ["Commander, colonies initialized. Protect your population to maintain sector control."],
     playerCount,
     aiPlayers,
     isHost: true,
