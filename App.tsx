@@ -99,7 +99,7 @@ const App: React.FC = () => {
     const code = btoa(JSON.stringify(myOrders));
     navigator.clipboard.writeText(`COMMAND_DATA:${code}`);
     setGameState(prev => ({ ...prev, readyPlayers: Array.from(new Set([...prev.readyPlayers, playerRole!])) }));
-    alert("Tactical Data Encrypted. Codes copied to clipboard.");
+    alert("Tactical Data Copied. Hand the code to your Host.");
   };
 
   const executeTurn = async () => {
@@ -107,9 +107,9 @@ const App: React.FC = () => {
     let nextPlanets = gameState.planets.map(p => ({...p}));
     let nextShips = gameState.ships.map(s => ({...s}));
     let nextCredits = { ...gameState.playerCredits };
-    const newLogs: string[] = [`--- Sector Update: Round ${gameState.round} ---`];
+    const newLogs: string[] = [`--- Round ${gameState.round} Resolution ---`];
 
-    // AI Logic
+    // AI logic (simplified for turn loop speed)
     for (const aiId of gameState.aiPlayers) {
       try {
         const moves = await getAiMoves(gameState, aiId);
@@ -128,10 +128,10 @@ const App: React.FC = () => {
             }
           });
         }
-      } catch (e) { console.error(`AI ${aiId} Logic Failure`, e); }
+      } catch (e) { console.error(`AI ${aiId} Error`, e); }
     }
 
-    // 1. Movement Phase
+    // Resolve Turn
     nextShips.forEach(s => {
       if (s.status === 'MOVING' && s.targetPlanetId) {
         const target = nextPlanets.find(p => p.id === s.targetPlanetId);
@@ -144,81 +144,64 @@ const App: React.FC = () => {
       }
     });
 
-    // 2. Population Growth Phase (+1 for all owned planets)
     nextPlanets.forEach(p => {
-      if (p.owner !== 'NEUTRAL') {
-        p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
-      }
+      if (p.owner !== 'NEUTRAL') p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
     });
 
-    // 3. Combat & Siege Phase
     nextPlanets.forEach(planet => {
       const orbitingShips = nextShips.filter(s => s.currentPlanetId === planet.id);
       const owners = Array.from(new Set(orbitingShips.map(s => s.owner)));
       
-      // Ship vs Ship Combat
       if (owners.length > 1) {
-        newLogs.push(`⚔️ Battle for ${planet.name} orbit...`);
-        const empireStrengths = owners.map(o => ({
-          owner: o,
-          power: orbitingShips.filter(s => s.owner === o).reduce((acc, s) => acc + s.attack + (s.hp / 10), 0)
-        })).sort((a, b) => a.power - b.power);
-        const underdog = empireStrengths[0];
-        const topDog = empireStrengths[empireStrengths.length - 1];
+        newLogs.push(`⚔️ Skirmish at ${planet.name}`);
+        const strengths = owners.map(o => ({ owner: o, power: orbitingShips.filter(s => s.owner === o).reduce((a, s) => a + s.attack + (s.hp / 10), 0) })).sort((a,b) => a.power - b.power);
+        const underdog = strengths[0];
+        const topDog = strengths[strengths.length-1];
         
-        let kirkEffectTriggered = false;
+        let kirk = false;
         if (underdog.power < topDog.power * 0.6 && Math.random() < KIRK_CHANCE) {
-          kirkEffectTriggered = true;
-          newLogs.push(`💫 MIRACLE: ${gameState.playerNames[underdog.owner]} exploited a localized ion storm!`);
+          kirk = true;
+          newLogs.push(`💫 KIRK MANEUVER: ${gameState.playerNames[underdog.owner]} turns the tide!`);
         }
 
-        owners.forEach(attackerId => {
-          const myFleet = orbitingShips.filter(s => s.owner === attackerId);
+        owners.forEach(atkId => {
+          const myFleet = orbitingShips.filter(s => s.owner === atkId);
           let totalAtk = myFleet.reduce((sum, s) => sum + s.attack, 0);
-          if (kirkEffectTriggered && attackerId === underdog.owner) totalAtk *= 5;
-
-          const targetEmpires = owners.filter(o => o !== attackerId);
-          const targetId = targetEmpires[Math.floor(Math.random() * targetEmpires.length)];
-          const targetFleet = orbitingShips.filter(s => s.owner === targetId);
+          if (kirk && atkId === underdog.owner) totalAtk *= 6;
+          
+          const targets = owners.filter(o => o !== atkId);
+          const targetFleet = orbitingShips.filter(s => s.owner === targets[0]);
           if (targetFleet.length > 0) {
             const victim = targetFleet[Math.floor(Math.random() * targetFleet.length)];
             victim.hp -= totalAtk;
-            if (victim.hp <= 0) newLogs.push(`💥 ${victim.owner} lost a ${victim.type} in the crossfire.`);
+            if (victim.hp <= 0) newLogs.push(`💥 ${victim.owner} ${victim.type} lost.`);
           }
         });
       }
 
-      // 4. Siege & Population Destruction Phase
       nextShips = nextShips.filter(s => s.hp > 0);
-      const survivingOrbiters = nextShips.filter(s => s.currentPlanetId === planet.id);
-      const enemyWarships = survivingOrbiters.filter(s => s.owner !== planet.owner && s.type === 'WARSHIP');
+      const survivors = nextShips.filter(s => s.currentPlanetId === planet.id);
+      const hostiles = survivors.filter(s => s.owner !== planet.owner && s.type === 'WARSHIP');
       
-      if (enemyWarships.length > 0 && planet.owner !== 'NEUTRAL') {
-        const popLoss = enemyWarships.length;
-        planet.population = Math.max(0, planet.population - popLoss);
-        newLogs.push(`💣 ${planet.name} bombarded! ${popLoss} survivors lost.`);
+      if (hostiles.length > 0 && planet.owner !== 'NEUTRAL') {
+        planet.population = Math.max(0, planet.population - hostiles.length);
+        newLogs.push(`💣 ${planet.name} bombardment!`);
       }
 
-      // 5. Conquest Phase (Ownership depends on population)
       if (planet.population <= 0) {
-        const hostiles = survivingOrbiters.filter(s => s.owner !== planet.owner);
-        if (hostiles.length > 0) {
-          const newOwner = hostiles[0].owner;
-          if (planet.owner !== 'NEUTRAL') newLogs.push(`🚩 ${planet.name} abandoned by ${planet.owner} due to zero population!`);
-          planet.owner = newOwner;
-          planet.population = 1; // Survivors landing to secure the base
-          planet.defense = planet.maxDefense / 2;
-          newLogs.push(`🛰️ ${gameState.playerNames[newOwner]} forces occupied ${planet.name}.`);
+        const conquerors = survivors.filter(s => s.owner !== planet.owner);
+        if (conquerors.length > 0) {
+          planet.owner = conquerors[0].owner;
+          planet.population = 1;
+          newLogs.push(`🚩 ${planet.name} conquered by ${planet.owner}`);
         } else if (planet.owner !== 'NEUTRAL') {
-          newLogs.push(`🌑 ${planet.name} has gone dark. Zero population remaining.`);
           planet.owner = 'NEUTRAL';
+          newLogs.push(`🌑 ${planet.name} dark.`);
         }
       }
 
-      // Recovery
       if (planet.owner !== 'NEUTRAL') {
-        const income = (planet.mines * 50) + (planet.factories * 20) + (planet.population * 50);
-        nextCredits[planet.owner] = (nextCredits[planet.owner] || 0) + income;
+        nextCredits[planet.owner] = (nextCredits[planet.owner] || 0) + (planet.mines * 50) + (planet.factories * 20) + (planet.population * 50);
         planet.defense = Math.min(planet.maxDefense, planet.defense + 10);
       }
     });
@@ -229,7 +212,7 @@ const App: React.FC = () => {
       planets: nextPlanets,
       ships: nextShips,
       playerCredits: nextCredits,
-      logs: [...newLogs, ...prev.logs].slice(0, 25),
+      logs: [...newLogs, ...prev.logs].slice(0, 20),
       readyPlayers: [] 
     }));
     setIsProcessing(false);
@@ -251,47 +234,32 @@ const App: React.FC = () => {
     setSelectedId(id); setSelectedType(type);
   };
 
-  const selectedPlanet = useMemo(() => 
-    selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null
-  , [selectedId, selectedType, gameState.planets]);
-
-  const selectedShip = useMemo(() => 
-    selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null
-  , [selectedId, selectedType, gameState.ships]);
-
+  const selectedPlanet = useMemo(() => selectedType === 'PLANET' ? gameState.planets.find(p => p.id === selectedId) : null, [selectedId, selectedType, gameState.planets]);
+  const selectedShip = useMemo(() => selectedType === 'SHIP' ? gameState.ships.find(s => s.id === selectedId) : null, [selectedId, selectedType, gameState.ships]);
   const economyStats = useMemo(() => {
     const role = playerRole || 'P1';
-    const myPlanets = gameState.planets.filter(p => p.owner === role);
-    const income = myPlanets.reduce((acc, p) => acc + (p.mines * 50) + (p.factories * 20) + (p.population * 50), 0);
-    return { income, credits: gameState.playerCredits[role] };
+    const myP = gameState.planets.filter(p => p.owner === role);
+    const inc = myP.reduce((a, p) => a + (p.mines * 50) + (p.factories * 20) + (p.population * 50), 0);
+    return { income: inc, credits: gameState.playerCredits[role] };
   }, [gameState.planets, playerRole, gameState.playerCredits]);
 
-  // Actions for transport
-  const handleLoadPerson = (shipId: string, planetId: string) => {
+  const handleLoadPerson = (sId: string, pId: string) => {
     setGameState(prev => {
-      const planet = prev.planets.find(p => p.id === planetId);
-      const ship = prev.ships.find(s => s.id === shipId);
-      if (planet && ship && planet.population > 0 && ship.cargoPeople < ship.maxPeopleCargo) {
-        return {
-          ...prev,
-          planets: prev.planets.map(p => p.id === planetId ? {...p, population: p.population - 1} : p),
-          ships: prev.ships.map(s => s.id === shipId ? {...s, cargoPeople: s.cargoPeople + 1} : s)
-        };
+      const p = prev.planets.find(p => p.id === pId);
+      const s = prev.ships.find(s => s.id === sId);
+      if (p && s && p.population > 0 && s.cargoPeople < s.maxPeopleCargo) {
+        return { ...prev, planets: prev.planets.map(pl => pl.id === pId ? {...pl, population: pl.population-1} : pl), ships: prev.ships.map(sh => sh.id === sId ? {...sh, cargoPeople: sh.cargoPeople+1} : sh) };
       }
       return prev;
     });
   };
 
-  const handleUnloadPerson = (shipId: string, planetId: string) => {
+  const handleUnloadPerson = (sId: string, pId: string) => {
     setGameState(prev => {
-      const planet = prev.planets.find(p => p.id === planetId);
-      const ship = prev.ships.find(s => s.id === shipId);
-      if (planet && ship && ship.cargoPeople > 0 && planet.population < MAX_PLANET_POPULATION) {
-        return {
-          ...prev,
-          planets: prev.planets.map(p => p.id === planetId ? {...p, population: p.population + 1} : p),
-          ships: prev.ships.map(s => s.id === shipId ? {...s, cargoPeople: s.cargoPeople - 1} : s)
-        };
+      const p = prev.planets.find(p => p.id === pId);
+      const s = prev.ships.find(s => s.id === sId);
+      if (p && s && s.cargoPeople > 0 && p.population < MAX_PLANET_POPULATION) {
+        return { ...prev, planets: prev.planets.map(pl => pl.id === pId ? {...pl, population: pl.population+1} : pl), ships: prev.ships.map(sh => sh.id === sId ? {...sh, cargoPeople: sh.cargoPeople-1} : sh) };
       }
       return prev;
     });
@@ -302,93 +270,75 @@ const App: React.FC = () => {
   return (
     <div className="fixed inset-0 flex flex-col bg-[#050b1a] text-slate-100 overflow-hidden select-none touch-none font-['Space_Grotesk']">
       
-      {/* HUD: GLOBAL STATUS */}
-      <div className="absolute top-0 left-0 right-0 z-[100] h-12 bg-gradient-to-b from-slate-950/90 to-transparent flex items-center justify-between px-6">
-         <div className="flex items-center gap-4">
-            <div className={`w-2.5 h-2.5 rounded-full ${relayStatus === 'CONNECTED' ? 'bg-emerald-500 shadow-[0_0_12px_#10b981]' : 'bg-amber-500 animate-pulse'}`} />
-            <div>
-              <p className="text-[10px] font-black uppercase tracking-[0.3em] text-white/60">
-                {viewMode === 'HOST' ? 'GALACTIC WAR ROOM' : `TACTICAL LINK: ${playerRole}`}
-              </p>
-              <p className="text-[8px] font-bold text-cyan-400">ROUND {gameState.round}</p>
+      {/* ADAPTIVE HUD: Compact for mobile */}
+      <div className="absolute top-0 left-0 right-0 z-[100] h-14 bg-gradient-to-b from-slate-950/95 to-transparent flex items-center justify-between px-4 md:px-8">
+         <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${relayStatus === 'CONNECTED' ? 'bg-emerald-500 shadow-[0_0_15px_#10b981]' : 'bg-amber-500 animate-pulse'}`} />
+            <div className="hidden sm:block">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-white/40 leading-none">SECTOR DATA</p>
+              <p className="text-[12px] font-bold text-cyan-400">ROUND {gameState.round}</p>
             </div>
+            <div className="sm:hidden text-[12px] font-black text-cyan-400">R-{gameState.round}</div>
          </div>
 
          {viewMode === 'PLAYER' && (
-            <div className="flex items-center gap-6 bg-slate-900/60 px-6 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
-                <div className="flex items-center gap-2">
-                   <span className="text-amber-400 text-sm">💰</span>
-                   <span className="text-sm font-black text-amber-400">{economyStats.credits}</span>
+            <div className="flex items-center gap-4 bg-slate-900/80 px-4 py-1.5 rounded-2xl border border-white/10 backdrop-blur-xl shadow-lg">
+                <div className="flex items-center gap-1.5">
+                   <span className="text-amber-400 text-xs">💰</span>
+                   <span className="text-sm font-black text-amber-100">{economyStats.credits}</span>
                 </div>
-                <div className="flex items-center gap-2">
-                   <span className="text-emerald-400 text-sm">📈</span>
-                   <span className="text-sm font-black text-emerald-400">+{economyStats.income}</span>
+                <div className="w-px h-3 bg-white/10" />
+                <div className="flex items-center gap-1.5">
+                   <span className="text-emerald-400 text-xs">📈</span>
+                   <span className="text-xs font-black text-emerald-400">+{economyStats.income}</span>
                 </div>
             </div>
          )}
 
-         <div className="flex items-center gap-2">
+         <div className="flex items-center gap-1.5">
             {viewMode === 'HOST' ? (
               <>
-                <button onClick={() => setIsInviteModalOpen(true)} className="w-9 h-9 rounded-xl bg-cyan-600/10 flex items-center justify-center text-sm border border-white/5 hover:bg-cyan-600/20" title="Empire Codes">🔗</button>
-                <button onClick={() => setIsNewGameModalOpen(true)} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/5" title="New Galaxy">🆕</button>
-                <button onClick={() => setIsIngestModalOpen(true)} className="w-9 h-9 rounded-xl bg-emerald-600/10 flex items-center justify-center text-sm border border-white/5 hover:bg-emerald-600/20" title="Receive Feed">📡</button>
+                <button onClick={() => setIsInviteModalOpen(true)} className="w-9 h-9 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20 active:bg-cyan-600/40">🔗</button>
+                <button onClick={() => setIsIngestModalOpen(true)} className="w-9 h-9 rounded-xl bg-emerald-600/20 flex items-center justify-center text-sm border border-emerald-500/20 active:bg-emerald-600/40">📡</button>
               </>
             ) : (
-              <button onClick={() => window.location.reload()} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/5" title="Refresh">🔄</button>
+              <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/10 active:bg-white/10">?</button>
             )}
-            <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 rounded-xl bg-white/5 flex items-center justify-center text-sm border border-white/5">?</button>
          </div>
       </div>
 
       <main className="flex-1 relative">
-        <MapView 
-          planets={gameState.planets} 
-          ships={gameState.ships} 
-          selectedId={selectedId} 
-          onSelect={handleMapSelect} 
-        />
+        <MapView planets={gameState.planets} ships={gameState.ships} selectedId={selectedId} onSelect={handleMapSelect} />
 
-        {/* HOST VIEW: STATUS MONITOR */}
-        {viewMode === 'HOST' && (
-           <div className="absolute top-20 left-6 z-40 bg-slate-900/80 backdrop-blur-xl border border-white/10 p-5 rounded-3xl w-56 shadow-2xl">
-              <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4">Command Status</h4>
-              <div className="space-y-2.5">
+        {/* HOST OVERLAY: Compact for Mobile */}
+        {viewMode === 'HOST' && !selectedId && (
+           <div className="absolute top-20 left-4 z-40 bg-slate-900/90 backdrop-blur-2xl border border-white/10 p-4 rounded-3xl w-44 shadow-2xl">
+              <h4 className="text-[8px] font-black text-slate-500 uppercase tracking-widest mb-3">Empire Sync</h4>
+              <div className="space-y-2 mb-4">
                  {Array.from({length: gameState.playerCount}).map((_, i) => {
                     const pId = `P${i+1}` as Owner;
                     const isAi = gameState.aiPlayers.includes(pId);
                     const isReady = gameState.readyPlayers.includes(pId) || isAi;
                     return (
                        <div key={pId} className="flex items-center justify-between">
-                          <span className="text-[11px] font-bold" style={{ color: PLAYER_COLORS[pId] }}>{gameState.playerNames[pId]}</span>
-                          <span className={`text-[8px] font-black ${isReady ? 'text-emerald-500' : 'text-slate-600 animate-pulse'}`}>{isReady ? 'READY' : 'WAITING'}</span>
+                          <span className="text-[10px] font-bold truncate pr-2" style={{ color: PLAYER_COLORS[pId] }}>{gameState.playerNames[pId]}</span>
+                          <span className={`text-[8px] font-black ${isReady ? 'text-emerald-500' : 'text-slate-600 animate-pulse'}`}>{isReady ? 'READY' : 'WAIT'}</span>
                        </div>
                     );
                  })}
               </div>
-              <button 
-                onClick={executeTurn}
-                disabled={isProcessing}
-                className="w-full mt-6 py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-900/40 active:scale-95 transition-all"
-              >
-                {isProcessing ? 'SYNCING GALAXY...' : 'EXECUTE ROUND'}
+              <button onClick={executeTurn} disabled={isProcessing} className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-xl active:scale-95 transition-all">
+                {isProcessing ? 'SYNC...' : 'EXECUTE'}
               </button>
-              
-              <div className="mt-5 p-4 bg-black/50 rounded-2xl border border-white/5 h-48 overflow-y-auto custom-scrollbar">
-                <h4 className="text-[7px] font-black text-slate-500 uppercase mb-2">Tactical Logs</h4>
-                {gameState.logs.map((log, i) => (
-                  <p key={i} className={`text-[8px] mb-2 leading-tight ${log.includes('bombard') || log.includes('lost') ? 'text-red-400' : log.includes('MIRACLE') ? 'text-amber-400 font-bold' : 'text-slate-400'}`}>{log}</p>
-                ))}
-              </div>
            </div>
         )}
 
-        {/* PLAYER VIEW: ACTION CONTROLS */}
+        {/* ERGONOMIC ACTION HUB: Thumb-friendly buttons */}
         {viewMode === 'PLAYER' && (
-           <div className={`absolute z-[120] flex transition-all duration-300 ${isLandscape ? 'bottom-6 right-6 flex-col items-end gap-3' : 'bottom-0 left-0 right-0 p-6 justify-between bg-gradient-to-t from-slate-950 to-transparent'}`}>
-              <div className="flex items-center gap-4">
-                  <button onClick={() => setIsAdvisorOpen(true)} className="w-16 h-16 bg-cyan-500 rounded-3xl flex items-center justify-center text-4xl shadow-xl shadow-cyan-500/30 active:scale-90 border-b-4 border-cyan-700">❂</button>
-                  <button onClick={submitOrdersToHost} className="bg-white text-black px-12 h-16 rounded-3xl font-black text-[12px] uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 border-slate-300 flex items-center gap-3">
+           <div className={`absolute z-[120] flex pointer-events-none transition-all duration-300 ${isLandscape ? 'bottom-6 right-6 flex-col items-end gap-3' : 'bottom-4 left-4 right-4 justify-between items-end'}`}>
+              <div className="pointer-events-auto flex items-end gap-3 w-full justify-between">
+                  <button onClick={() => setIsAdvisorOpen(true)} className="w-16 h-16 bg-cyan-500 rounded-3xl flex items-center justify-center text-4xl shadow-2xl shadow-cyan-500/40 active:scale-90 border-b-4 border-cyan-700">❂</button>
+                  <button onClick={submitOrdersToHost} className="flex-1 max-w-[200px] bg-white text-black h-16 rounded-3xl font-black text-[12px] uppercase tracking-widest shadow-2xl transition-all active:scale-95 border-b-4 border-slate-300 flex items-center justify-center gap-2">
                     <span>PUSH ORDERS</span>
                     <span className="text-xl">📡</span>
                   </button>
@@ -396,141 +346,120 @@ const App: React.FC = () => {
            </div>
         )}
 
-        {/* HUD: TACTICAL PANEL */}
+        {/* COMMAND SHEET: Responsive drawer/sidebar */}
         <div className={`absolute transition-all duration-500 ease-out z-[130] 
           ${isLandscape 
-            ? `top-16 bottom-16 left-0 w-80 ${selectedId ? 'translate-x-6' : '-translate-x-full'}` 
-            : `bottom-0 left-0 right-0 ${selectedId ? 'translate-y-0' : 'translate-y-full'}`
+            ? `top-20 bottom-20 left-0 w-80 ${selectedId ? 'translate-x-6' : '-translate-x-full'}` 
+            : `bottom-0 left-0 right-0 ${selectedId ? 'translate-y-0' : 'translate-y-[100%]'}`
           }`}
         >
-          <div className={`${isLandscape ? 'h-full w-full rounded-[3rem]' : 'mx-2 rounded-t-[4rem]'} bg-slate-900/95 backdrop-blur-3xl border border-white/10 p-10 flex flex-col shadow-2xl`}>
-             <div className="flex justify-between items-start mb-8">
-                <div className="max-w-[80%]">
-                   <h2 className="text-2xl font-bold italic text-white truncate">{selectedPlanet?.name || selectedShip?.name || 'Object'}</h2>
-                   <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mt-1">Tactical Telemetry</p>
+          <div className={`
+            relative flex flex-col bg-slate-900/98 backdrop-blur-3xl border-white/10 shadow-2xl overflow-hidden
+            ${isLandscape ? 'h-full rounded-[3rem] border' : 'rounded-t-[3.5rem] border-t max-h-[50vh] min-h-[40vh]'}
+          `}>
+             {/* Portrait Handle */}
+             {!isLandscape && <div className="absolute top-4 left-1/2 -translate-x-1/2 w-12 h-1.5 bg-white/10 rounded-full" />}
+             
+             <div className="p-8 pb-4 flex justify-between items-start">
+                <div className="max-w-[75%]">
+                   <h2 className="text-xl font-bold italic text-white truncate">{selectedPlanet?.name || selectedShip?.name || 'Unknown'}</h2>
+                   <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mt-0.5">Tactical Analysis</p>
                 </div>
-                <button onClick={() => setSelectedId(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-400 hover:text-white">✕</button>
+                <button onClick={() => setSelectedId(null)} className="w-10 h-10 rounded-full bg-white/5 flex items-center justify-center text-slate-400">✕</button>
              </div>
              
-             <div className="flex-1 overflow-y-auto space-y-8 pr-1 custom-scrollbar">
+             <div className="flex-1 overflow-y-auto px-8 pb-10 space-y-6 custom-scrollbar">
                 {selectedPlanet && (
-                  <div className="space-y-8">
-                    <div className="bg-black/50 p-6 rounded-[3rem] border border-white/5">
-                        <div className="flex justify-between items-center mb-2">
-                           <p className="text-[10px] text-slate-500 uppercase tracking-widest italic">Affiliation</p>
+                  <div className="space-y-6">
+                    <div className="bg-black/40 p-5 rounded-[2.5rem] border border-white/5">
+                        <div className="flex justify-between items-center mb-3">
                            <div className="flex items-center gap-2">
-                              <span className="text-xs">👥</span>
-                              <span className={`text-xs font-black ${selectedPlanet.population < 2 ? 'text-red-400' : 'text-white'}`}>{selectedPlanet.population} / {MAX_PLANET_POPULATION}</span>
+                              <span className="text-sm">👥</span>
+                              <span className={`text-[11px] font-black ${selectedPlanet.population < 2 ? 'text-red-400' : 'text-white'}`}>{selectedPlanet.population} / {MAX_PLANET_POPULATION}</span>
                            </div>
+                           <p className="text-[10px] font-black uppercase tracking-widest" style={{ color: PLAYER_COLORS[selectedPlanet.owner] }}>{gameState.playerNames[selectedPlanet.owner]}</p>
                         </div>
-                        <p className="text-xl font-black" style={{ color: PLAYER_COLORS[selectedPlanet.owner] }}>{gameState.playerNames[selectedPlanet.owner]}</p>
                         
-                        <div className="mt-5">
-                           <div className="flex justify-between text-[8px] font-black uppercase text-slate-500 mb-1.5">
-                              <span>Shield Strength</span>
-                              <span>{Math.round(selectedPlanet.defense)} / {selectedPlanet.maxDefense}</span>
+                        <div className="space-y-1.5">
+                           <div className="flex justify-between text-[8px] font-black uppercase text-slate-500">
+                              <span>Shields</span>
+                              <span>{Math.round(selectedPlanet.defense)} HP</span>
                            </div>
-                           <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                              <div className="h-full bg-emerald-500 shadow-[0_0_10px_#10b981] transition-all duration-700" style={{ width: `${(selectedPlanet.defense / selectedPlanet.maxDefense) * 100}%` }} />
+                           <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                              <div className="h-full bg-emerald-500 transition-all duration-700" style={{ width: `${(selectedPlanet.defense / selectedPlanet.maxDefense) * 100}%` }} />
                            </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4 mt-8">
-                          <div className="bg-white/5 p-6 rounded-3xl text-center">
-                            <span className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Mines</span>
-                            <span className="text-2xl font-black">{selectedPlanet.mines}</span>
+                        <div className="grid grid-cols-2 gap-3 mt-6">
+                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5">
+                            <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Mines</span>
+                            <span className="text-lg font-black">{selectedPlanet.mines}</span>
                           </div>
-                          <div className="bg-white/5 p-6 rounded-3xl text-center">
-                            <span className="block text-[8px] text-slate-500 font-bold uppercase mb-1">Fact.</span>
-                            <span className="text-2xl font-black">{selectedPlanet.factories}</span>
+                          <div className="bg-white/5 p-4 rounded-2xl text-center border border-white/5">
+                            <span className="block text-[7px] text-slate-500 font-bold uppercase mb-0.5">Fact.</span>
+                            <span className="text-lg font-black">{selectedPlanet.factories}</span>
                           </div>
                         </div>
                     </div>
 
-                    {(viewMode === 'PLAYER' && selectedPlanet.owner === playerRole) && (
-                      <div className="space-y-3">
-                        <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center mb-2">Colonial Expansion</h4>
-                        {['SCOUT', 'FREIGHTER', 'WARSHIP'].map(type => (
-                          <button key={type} onClick={() => {
-                            const cost = SHIP_COSTS[type as ShipType];
-                            if (gameState.playerCredits[playerRole!] >= cost) {
-                               const stats = SHIP_STATS[type as ShipType];
-                               const newShip: Ship = { 
-                                  id: `s-${Date.now()}`, 
-                                  name: `${gameState.playerNames[playerRole!]} ${type}`, 
-                                  type: type as ShipType, 
-                                  owner: playerRole!, 
-                                  x: selectedPlanet!.x, y: selectedPlanet!.y, 
-                                  currentPlanetId: selectedPlanet!.id, 
-                                  cargo: 0, maxCargo: stats.cargo, 
-                                  cargoPeople: 0, maxPeopleCargo: stats.people,
-                                  hp: stats.hp, maxHp: stats.hp, 
-                                  attack: stats.attack, speed: stats.speed,
-                                  status: 'ORBITING' 
-                               };
-                               setGameState(p => ({...p, playerCredits: {...p.playerCredits, [playerRole!]: p.playerCredits[playerRole!]-cost}, ships: [...p.ships, newShip]}));
-                            }
-                          }} className="p-5 bg-slate-950/80 rounded-3xl border border-white/10 flex items-center justify-between active:scale-95 transition-all">
-                            <div className="flex items-center gap-4">
-                               <span className="text-2xl">{type === 'SCOUT' ? '🚀' : type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
-                               <span className="text-[11px] font-black uppercase tracking-widest">{type}</span>
-                            </div>
-                            <span className="text-[11px] text-amber-500 font-bold">{SHIP_COSTS[type as ShipType]} Cr</span>
-                          </button>
-                        ))}
+                    {viewMode === 'PLAYER' && selectedPlanet.owner === playerRole && (
+                      <div className="space-y-2">
+                        <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest text-center mb-1">Production Hub</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                          {['SCOUT', 'FREIGHTER', 'WARSHIP'].map(type => (
+                            <button key={type} onClick={() => {
+                              const cost = SHIP_COSTS[type as ShipType];
+                              if (gameState.playerCredits[playerRole!] >= cost) {
+                                 const stats = SHIP_STATS[type as ShipType];
+                                 const newShip: Ship = { id: `s-${Date.now()}`, name: `${gameState.playerNames[playerRole!]} ${type}`, type: type as ShipType, owner: playerRole!, x: selectedPlanet!.x, y: selectedPlanet!.y, currentPlanetId: selectedPlanet!.id, cargo: 0, maxCargo: stats.cargo, cargoPeople: 0, maxPeopleCargo: stats.people, hp: stats.hp, maxHp: stats.hp, attack: stats.attack, speed: stats.speed, status: 'ORBITING' };
+                                 setGameState(p => ({...p, playerCredits: {...p.playerCredits, [playerRole!]: p.playerCredits[playerRole!]-cost}, ships: [...p.ships, newShip]}));
+                              }
+                            }} className="p-4 bg-slate-950/80 rounded-2xl border border-white/10 flex items-center justify-between active:bg-cyan-900/20 transition-all">
+                              <span className="text-lg">{type === 'SCOUT' ? '🚀' : type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
+                              <div className="flex flex-col items-end">
+                                 <span className="text-[10px] font-black uppercase">{type}</span>
+                                 <span className="text-[9px] text-amber-500 font-bold">{SHIP_COSTS[type as ShipType]} Cr</span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>
                 )}
 
                 {selectedShip && (
-                   <div className="bg-black/60 p-8 rounded-[3rem] border border-white/10 space-y-8">
+                   <div className="bg-black/60 p-6 rounded-[2.5rem] border border-white/5 space-y-6">
                      <div className="flex justify-between items-center">
-                        <span className="px-5 py-2 bg-cyan-600/20 rounded-full text-[10px] font-black text-cyan-400 uppercase tracking-[0.2em]">{selectedShip.type}</span>
+                        <span className="px-4 py-1.5 bg-cyan-600/20 rounded-xl text-[9px] font-black text-cyan-400 uppercase">{selectedShip.type}</span>
                         <div className="flex items-center gap-2">
-                           <span className="text-[12px] font-bold text-emerald-400">{selectedShip.status}</span>
-                           {selectedShip.cargoPeople > 0 && <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[9px] font-black border border-amber-500/30">👥 {selectedShip.cargoPeople}</span>}
+                           <span className="text-[11px] font-bold text-emerald-400">{selectedShip.status}</span>
+                           {selectedShip.cargoPeople > 0 && <span className="bg-amber-500/20 text-amber-400 px-2 py-0.5 rounded-full text-[8px] font-black border border-amber-500/20">👥 {selectedShip.cargoPeople}</span>}
                         </div>
                      </div>
                      
-                     <div className="space-y-5">
-                        <div className="space-y-2.5">
-                           <div className="flex justify-between text-[8px] font-black uppercase text-slate-500"><span>Warp Efficiency</span><span>{selectedShip.speed} km/h</span></div>
-                           <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400" style={{ width: `${(selectedShip.speed / 180) * 100}%` }} /></div>
+                     <div className="space-y-4">
+                        <div className="space-y-1.5">
+                           <div className="flex justify-between text-[7px] font-black uppercase text-slate-600"><span>Warp Drive</span><span>{selectedShip.speed} km/h</span></div>
+                           <div className="h-1 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-cyan-400" style={{ width: `${(selectedShip.speed / 180) * 100}%` }} /></div>
                         </div>
-                        <div className="space-y-2.5">
-                           <div className="flex justify-between text-[8px] font-black uppercase text-slate-500"><span>Tactical Yield</span><span>{selectedShip.attack} atk</span></div>
-                           <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-red-500" style={{ width: `${(selectedShip.attack / 50) * 100}%` }} /></div>
-                        </div>
-                        <div className="space-y-2.5">
-                           <div className="flex justify-between text-[8px] font-black uppercase text-slate-500"><span>Storage Mass</span><span>{selectedShip.maxCargo} ton</span></div>
-                           <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-emerald-500" style={{ width: `${(selectedShip.maxCargo / 1000) * 100}%` }} /></div>
+                        <div className="space-y-1.5">
+                           <div className="flex justify-between text-[7px] font-black uppercase text-slate-600"><span>Attack Yield</span><span>{selectedShip.attack} yield</span></div>
+                           <div className="h-1 bg-slate-800 rounded-full overflow-hidden"><div className="h-full bg-red-500" style={{ width: `${(selectedShip.attack / 50) * 100}%` }} /></div>
                         </div>
                      </div>
 
-                     {(viewMode === 'PLAYER' && selectedShip.owner === playerRole) && (
-                       <div className="space-y-4">
+                     {viewMode === 'PLAYER' && selectedShip.owner === playerRole && (
+                       <div className="space-y-3">
                          {selectedShip.type === 'FREIGHTER' && selectedShip.currentPlanetId && (
-                            <div className="grid grid-cols-2 gap-3">
-                               <button 
-                                 disabled={selectedShip.cargoPeople >= selectedShip.maxPeopleCargo}
-                                 onClick={() => handleLoadPerson(selectedShip.id, selectedShip.currentPlanetId!)}
-                                 className="py-3 bg-amber-500/20 border border-amber-500/40 rounded-2xl text-[10px] font-black uppercase text-amber-400 disabled:opacity-30 active:scale-95"
-                               >
-                                 Load Colonist
-                               </button>
-                               <button 
-                                 disabled={selectedShip.cargoPeople === 0}
-                                 onClick={() => handleUnloadPerson(selectedShip.id, selectedShip.currentPlanetId!)}
-                                 className="py-3 bg-emerald-500/20 border border-emerald-500/40 rounded-2xl text-[10px] font-black uppercase text-emerald-400 disabled:opacity-30 active:scale-95"
-                               >
-                                 Unload Colonist
-                               </button>
+                            <div className="grid grid-cols-2 gap-2">
+                               <button disabled={selectedShip.cargoPeople >= selectedShip.maxPeopleCargo} onClick={() => handleLoadPerson(selectedShip.id, selectedShip.currentPlanetId!)} className="py-3 bg-amber-500/20 border border-amber-500/30 rounded-2xl text-[9px] font-black uppercase text-amber-400 disabled:opacity-20 active:scale-95">Load 👤</button>
+                               <button disabled={selectedShip.cargoPeople === 0} onClick={() => handleUnloadPerson(selectedShip.id, selectedShip.currentPlanetId!)} className="py-3 bg-emerald-500/20 border border-emerald-500/30 rounded-2xl text-[9px] font-black uppercase text-emerald-400 disabled:opacity-20 active:scale-95">Drop 👤</button>
                             </div>
                          )}
-                         <div className="p-6 bg-cyan-600/10 border border-cyan-500/20 rounded-3xl text-center">
-                           <p className="text-[11px] text-cyan-300 font-black mb-1">NAV-COM READY</p>
-                           <p className="text-[10px] text-white/40 italic leading-relaxed">Designate destination to commit vector.</p>
+                         <div className="p-4 bg-cyan-600/10 border border-cyan-500/20 rounded-2xl text-center">
+                           <p className="text-[9px] text-cyan-300 font-black mb-0.5 tracking-widest uppercase">Navigation Locked</p>
+                           <p className="text-[9px] text-white/40 italic leading-tight">Designate coordinates via star chart.</p>
                          </div>
                        </div>
                      )}
@@ -541,13 +470,9 @@ const App: React.FC = () => {
         </div>
       </main>
 
-      {/* OVERLAYS */}
       <AdvisorPanel gameState={gameState} isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
-      <IngestModal 
-        isOpen={isIngestModalOpen} 
-        onClose={() => setIsIngestModalOpen(false)} 
-        onIngest={(data) => {
+      <IngestModal isOpen={isIngestModalOpen} onClose={() => setIsIngestModalOpen(false)} onIngest={(data) => {
           try {
             const raw = data.replace('COMMAND_DATA:', '');
             const orders = JSON.parse(atob(raw));
@@ -564,9 +489,7 @@ const App: React.FC = () => {
             });
             setIsIngestModalOpen(false);
           } catch(e) { console.error(e); }
-        }}
-        readyPlayers={gameState.readyPlayers}
-      />
+        }} readyPlayers={gameState.readyPlayers} />
       <NewGameModal isOpen={isNewGameModalOpen} onClose={() => setIsNewGameModalOpen(false)} onConfirm={(p, a, n) => { setGameState(generateInitialState(p, a, undefined, n)); setIsNewGameModalOpen(false); setSelectedId(null); }} />
       <InviteModal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} joinUrl={`${window.location.origin}${window.location.pathname}`} gameState={gameState} />
     </div>

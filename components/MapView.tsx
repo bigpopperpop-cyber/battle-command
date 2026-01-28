@@ -20,7 +20,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
   const hasMovedRef = useRef(false);
 
   useEffect(() => {
-    // Center on P1's home planet or first neutral
     const centerPlanet = planets.find(p => p.owner === 'P1') || planets[0];
     if (centerPlanet) {
        setOffset({ 
@@ -41,7 +40,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
     if (!isDraggingRef.current) return;
     const dx = clientX - dragStartPosRef.current.x;
     const dy = clientY - dragStartPosRef.current.y;
-    if (Math.abs(dx) > 8 || Math.abs(dy) > 8) hasMovedRef.current = true;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) hasMovedRef.current = true;
     setOffset({ x: offsetAtStartRef.current.x + dx, y: offsetAtStartRef.current.y + dy });
   };
 
@@ -84,23 +83,29 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
             key={planet.id}
             onClick={(e) => handleItemClick(e, planet.id, 'PLANET')}
             className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group z-10"
-            style={{ left: planet.x, top: planet.y }}
+            style={{ left: planet.x, top: planet.y, padding: '20px' }} // Added padding for larger tap target
           >
             {selectedId === planet.id && (
-               <div className="absolute inset-0 w-24 h-24 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-cyan-500 border-dashed animate-[spin_25s_linear_infinite]" 
+               <div className="absolute inset-0 w-28 h-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-400 border-dashed animate-[spin_10s_linear_infinite] opacity-60" 
                     style={{ left: '50%', top: '50%' }} />
             )}
             <div 
-              className={`w-10 h-10 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_50px_rgba(255,255,255,0.4)]' : 'scale-100 opacity-90'}`}
+              className={`w-12 h-12 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_60px_#fff8]' : 'scale-100 opacity-90 border-white/20'}`}
               style={{ 
                 backgroundColor: PLAYER_COLORS[planet.owner],
-                borderColor: planet.owner !== 'NEUTRAL' ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.1)',
-                boxShadow: `0 0 45px ${PLAYER_COLORS[planet.owner]}55`
+                boxShadow: `0 0 50px ${PLAYER_COLORS[planet.owner]}66`
               }}
             />
-            <span className="mt-4 text-[7px] font-black uppercase tracking-[0.2em] text-white/50 bg-black/50 px-3 py-1 rounded-full border border-white/5 whitespace-nowrap">
-              {planet.name}
-            </span>
+            <div className="mt-4 flex flex-col items-center gap-1">
+               <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white bg-black/60 px-4 py-1.5 rounded-2xl border border-white/10 whitespace-nowrap shadow-xl">
+                 {planet.name}
+               </span>
+               <div className="flex gap-0.5">
+                  {Array.from({length: planet.population}).map((_, i) => (
+                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/80" />
+                  ))}
+               </div>
+            </div>
           </div>
         ))}
 
@@ -108,35 +113,35 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
           <div
             key={ship.id}
             onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 z-20 ${selectedId === ship.id ? 'scale-150 z-30' : 'opacity-90'}`}
-            style={{ left: ship.x, top: ship.y }}
+            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 z-20 ${selectedId === ship.id ? 'scale-[2.0] z-30 shadow-[0_0_30px_#fff8]' : 'opacity-90'}`}
+            style={{ left: ship.x, top: ship.y, padding: '15px' }} // Tap target padding
           >
              <div className="relative flex flex-col items-center">
                 <div 
-                   className="w-7 h-7 flex items-center justify-center rounded-xl border border-white/20 shadow-xl" 
+                   className="w-8 h-8 flex items-center justify-center rounded-2xl border border-white/20 shadow-2xl" 
                    style={{ 
                       backgroundColor: PLAYER_COLORS[ship.owner],
                       transform: 'rotate(45deg)'
                    }}
                 >
-                   <span className="text-[11px] -rotate-45">{ship.type === 'SCOUT' ? '🚀' : ship.type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
+                   <span className="text-sm -rotate-45">{ship.type === 'SCOUT' ? '🚀' : ship.type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
                 </div>
              </div>
           </div>
         ))}
       </div>
 
-      {/* Navigation Controls - Optimized for Left Thumb */}
-      <div className="absolute bottom-24 left-6 flex flex-col gap-4 z-[150]">
+      {/* Navigation Controls - Optimized for Phone Thumbs */}
+      <div className="absolute bottom-28 left-4 flex flex-col gap-3 z-[150]">
         <button 
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2.5, z + 0.2)); }} 
-          className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold border-white/10 active:scale-90"
+          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(3.0, z + 0.3)); }} 
+          className="w-14 h-14 bg-slate-900/90 backdrop-blur-xl rounded-2xl flex items-center justify-center text-2xl font-black border border-white/10 active:scale-90 shadow-2xl text-cyan-400"
         >
           +
         </button>
         <button 
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.2)); }} 
-          className="w-12 h-12 glass-card rounded-2xl flex items-center justify-center text-xl font-bold border-white/10 active:scale-90"
+          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.3)); }} 
+          className="w-14 h-14 bg-slate-900/90 backdrop-blur-xl rounded-2xl flex items-center justify-center text-2xl font-black border border-white/10 active:scale-90 shadow-2xl text-slate-400"
         >
           -
         </button>
