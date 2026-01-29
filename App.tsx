@@ -9,24 +9,26 @@ import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
 import LobbyModal from './components/LobbyModal';
 import { getAiMoves } from './services/geminiService';
-import { initializeApp, getApp, getApps } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, push, onDisconnect, get } from 'firebase/database';
+import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
+import { getDatabase, ref, onValue, set, update, push, onDisconnect, get, Database } from 'firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
   // IMPORTANT: Replace this with your actual Firebase Realtime Database URL
-  // Example: "https://your-project-id-default-rtdb.firebaseio.com"
+  // You can find this in your Firebase Console under Realtime Database.
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
 
 // Initialize Firebase App and Database service safely
-let db: any = null;
+let db: Database | null = null;
 const isConfigSet = firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
-  // Standard Firebase Modular initialization
-  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  // Ensure we use a consistent initialization pattern
+  const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  // Modular SDK: getDatabase(app) ensures the service is linked to the correct instance
   db = getDatabase(app);
+  console.log("Stellar Command Relay Link Established.");
 } catch (e) {
   console.error("Firebase Initialization Failed:", e);
 }
@@ -49,7 +51,7 @@ const App: React.FC = () => {
 
   const hostNewGame = useCallback((pCount: number, aiCount: number, names: Record<string, string>, diff: AiDifficulty) => {
     if (!db || !isConfigSet) {
-      alert("Relay Error: Firebase Database not configured. Please enter your Realtime Database URL in App.tsx.");
+      alert("Relay Error: Firebase Database not configured. Please enter your project's Realtime Database URL in App.tsx.");
       return;
     }
     
