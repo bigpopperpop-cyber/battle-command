@@ -1,56 +1,41 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Planet, Ship, ShipType } from '../types';
+import { Planet, Ship } from '../types';
 import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
 
 interface MapViewProps {
   planets: Planet[];
   ships: Ship[];
   selectedId: string | null;
-  onSelect: (id: string, type: 'PLANET' | 'SHIP') => void;
+  onSelect: (id: string) => void;
 }
 
 const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect }) => {
-  const [zoom, setZoom] = useState(0.55);
+  const [zoom, setZoom] = useState(0.5);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
-  
-  const isDraggingRef = useRef(false);
-  const dragStartPosRef = useRef({ x: 0, y: 0 });
-  const offsetAtStartRef = useRef({ x: 0, y: 0 });
-  const hasMovedRef = useRef(false);
+  const isDragging = useRef(false);
+  const startPos = useRef({ x: 0, y: 0 });
+  const startOffset = useRef({ x: 0, y: 0 });
+  const moved = useRef(false);
 
   useEffect(() => {
-    const centerPlanet = planets.find(p => p.owner === 'P1') || planets[0];
-    if (centerPlanet) {
-       setOffset({ 
-         x: window.innerWidth/2 - centerPlanet.x * zoom, 
-         y: window.innerHeight/2 - centerPlanet.y * zoom 
-       });
-    }
+    // Initial centering
+    setOffset({ x: window.innerWidth / 2 - (GRID_SIZE / 2) * zoom, y: window.innerHeight / 2 - (GRID_SIZE / 2) * zoom });
   }, []);
 
-  const handleStart = (clientX: number, clientY: number) => {
-    isDraggingRef.current = true;
-    hasMovedRef.current = false;
-    dragStartPosRef.current = { x: clientX, y: clientY };
-    offsetAtStartRef.current = { ...offset };
+  const handleStart = (x: number, y: number) => {
+    isDragging.current = true;
+    moved.current = false;
+    startPos.current = { x, y };
+    startOffset.current = { ...offset };
   };
 
-  const handleMove = (clientX: number, clientY: number) => {
-    if (!isDraggingRef.current) return;
-    const dx = clientX - dragStartPosRef.current.x;
-    const dy = clientY - dragStartPosRef.current.y;
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) hasMovedRef.current = true;
-    setOffset({ x: offsetAtStartRef.current.x + dx, y: offsetAtStartRef.current.y + dy });
-  };
-
-  const handleEnd = () => { isDraggingRef.current = false; };
-
-  const handleItemClick = (e: React.MouseEvent | React.TouchEvent, id: string, type: 'PLANET' | 'SHIP') => {
-    if (!hasMovedRef.current) {
-      e.stopPropagation();
-      onSelect(id, type);
-    }
+  const handleMove = (x: number, y: number) => {
+    if (!isDragging.current) return;
+    const dx = x - startPos.current.x;
+    const dy = y - startPos.current.y;
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved.current = true;
+    setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy });
   };
 
   return (
@@ -58,93 +43,65 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect 
       className="w-full h-full relative overflow-hidden bg-[#020617] cursor-grab active:cursor-grabbing touch-none select-none"
       onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
       onMouseMove={(e) => handleMove(e.clientX, e.clientY)}
-      onMouseUp={handleEnd}
-      onMouseLeave={handleEnd}
-      onTouchStart={(e) => e.touches[0] && handleStart(e.touches[0].clientX, e.touches[0].clientY)}
-      onTouchMove={(e) => e.touches[0] && handleMove(e.touches[0].clientX, e.touches[0].clientY)}
-      onTouchEnd={handleEnd}
+      onMouseUp={() => isDragging.current = false}
+      onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
+      onTouchMove={(e) => handleMove(e.touches[0].clientX, e.touches[0].clientY)}
+      onTouchEnd={() => isDragging.current = false}
     >
       <div 
-        className="absolute will-change-transform"
+        className="absolute transition-transform duration-75"
         style={{ 
           transform: `translate3d(${offset.x}px, ${offset.y}px, 0) scale(${zoom})`,
-          transformOrigin: '0 0',
-          width: `${GRID_SIZE}px`,
-          height: `${GRID_SIZE}px`,
+          width: GRID_SIZE,
+          height: GRID_SIZE,
+          transformOrigin: '0 0'
         }}
       >
-        <div className="absolute inset-0 opacity-[0.05]" style={{
-          backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)',
-          backgroundSize: '200px 200px'
-        }} />
+        {/* Grid Background */}
+        <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
 
-        {planets.map(planet => (
-          <div
-            key={planet.id}
-            onClick={(e) => handleItemClick(e, planet.id, 'PLANET')}
-            className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer flex flex-col items-center group z-10"
-            style={{ left: planet.x, top: planet.y, padding: '20px' }} // Added padding for larger tap target
+        {planets.map(p => (
+          <div 
+            key={p.id}
+            onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(p.id); }}
+            className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto"
+            style={{ left: p.x, top: p.y }}
           >
-            {selectedId === planet.id && (
-               <div className="absolute inset-0 w-28 h-28 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-cyan-400 border-dashed animate-[spin_10s_linear_infinite] opacity-60" 
-                    style={{ left: '50%', top: '50%' }} />
-            )}
             <div 
-              className={`w-12 h-12 rounded-full border-2 transition-all duration-300 ${selectedId === planet.id ? 'scale-125 border-white shadow-[0_0_60px_#fff8]' : 'scale-100 opacity-90 border-white/20'}`}
-              style={{ 
-                backgroundColor: PLAYER_COLORS[planet.owner],
-                boxShadow: `0 0 50px ${PLAYER_COLORS[planet.owner]}66`
-              }}
-            />
-            <div className="mt-4 flex flex-col items-center gap-1">
-               <span className="text-[9px] font-black uppercase tracking-[0.2em] text-white bg-black/60 px-4 py-1.5 rounded-2xl border border-white/10 whitespace-nowrap shadow-xl">
-                 {planet.name}
-               </span>
-               <div className="flex gap-0.5">
-                  {Array.from({length: planet.population}).map((_, i) => (
-                    <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/80" />
-                  ))}
-               </div>
+              className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex items-center justify-center ${selectedId === p.id ? 'scale-125 border-white shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'border-white/10 opacity-80'}`}
+              style={{ backgroundColor: PLAYER_COLORS[p.owner], boxShadow: `0 0 30px ${PLAYER_COLORS[p.owner]}44` }}
+            >
+              <span className="text-[10px] font-black text-white/20 select-none">{p.name[0]}</span>
+            </div>
+            <div className="mt-3 bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              <span className="text-[10px] font-black text-white uppercase tracking-widest">{p.name}</span>
+            </div>
+            {/* Pop Indicator */}
+            <div className="flex gap-0.5 mt-1">
+              {Array.from({length: p.population}).map((_, i) => (
+                <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/40" />
+              ))}
             </div>
           </div>
         ))}
 
-        {ships.map(ship => (
-          <div
-            key={ship.id}
-            onClick={(e) => handleItemClick(e, ship.id, 'SHIP')}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 z-20 ${selectedId === ship.id ? 'scale-[2.0] z-30 shadow-[0_0_30px_#fff8]' : 'opacity-90'}`}
-            style={{ left: ship.x, top: ship.y, padding: '15px' }} // Tap target padding
+        {ships.map(s => (
+          <div 
+            key={s.id}
+            className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-none"
+            style={{ left: s.x, top: s.y, transition: 'all 2s ease-in-out' }}
           >
-             <div className="relative flex flex-col items-center">
-                <div 
-                   className="w-8 h-8 flex items-center justify-center rounded-2xl border border-white/20 shadow-2xl" 
-                   style={{ 
-                      backgroundColor: PLAYER_COLORS[ship.owner],
-                      transform: 'rotate(45deg)'
-                   }}
-                >
-                   <span className="text-sm -rotate-45">{ship.type === 'SCOUT' ? '🚀' : ship.type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
-                </div>
-             </div>
+            <div className="w-6 h-6 border-2 rotate-45 flex items-center justify-center bg-slate-900 shadow-xl" style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+              <span className="text-[10px] -rotate-45">🚀</span>
+            </div>
           </div>
         ))}
       </div>
 
-      {/* Navigation Controls - Optimized for Phone Thumbs */}
-      <div className="absolute bottom-28 left-4 flex flex-col gap-3 z-[150]">
-        <button 
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(3.0, z + 0.3)); }} 
-          className="w-14 h-14 bg-slate-900/90 backdrop-blur-xl rounded-2xl flex items-center justify-center text-2xl font-black border border-white/10 active:scale-90 shadow-2xl text-cyan-400"
-        >
-          +
-        </button>
-        <button 
-          onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.3)); }} 
-          className="w-14 h-14 bg-slate-900/90 backdrop-blur-xl rounded-2xl flex items-center justify-center text-2xl font-black border border-white/10 active:scale-90 shadow-2xl text-slate-400"
-        >
-          -
-        </button>
+      {/* Map Controls */}
+      <div className="absolute bottom-10 left-10 flex flex-col gap-2">
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 bg-slate-900 border border-white/10 rounded-xl font-bold text-xl">+</button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 bg-slate-900 border border-white/10 rounded-xl font-bold text-xl">-</button>
       </div>
     </div>
   );
