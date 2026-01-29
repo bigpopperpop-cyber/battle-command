@@ -8,12 +8,13 @@ export type HelpTab = 'GOAL' | 'INTERFACE' | 'ECONOMY' | 'COMMS';
 interface HelpModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenInvite?: () => void;
   gameState?: GameState;
   playerRole?: Owner | null;
   initialTab?: HelpTab;
 }
 
-const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playerRole, initialTab = 'GOAL' }) => {
+const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, gameState, playerRole, initialTab = 'GOAL' }) => {
   const [activeTab, setActiveTab] = useState<HelpTab>(initialTab);
 
   useEffect(() => {
@@ -23,6 +24,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
   if (!isOpen) return null;
 
   const isPlayer = playerRole && playerRole.startsWith('P');
+  const isHost = playerRole === 'P1';
   const myPlanets = isPlayer && gameState ? gameState.planets.filter(p => p.owner === playerRole) : [];
   const myShips = isPlayer && gameState ? gameState.ships.filter(s => s.owner === playerRole) : [];
 
@@ -216,30 +218,55 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, gameState, playe
           )}
 
           {activeTab === 'COMMS' && (
-            <div className="space-y-4 animate-in fade-in slide-in-from-bottom-2">
-               <div className="p-6 bg-slate-900/80 rounded-3xl border border-cyan-500/20">
+            <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
+               <div className="p-6 bg-slate-900/80 rounded-3xl border border-cyan-500/20 relative overflow-hidden">
+                 <div className="absolute top-0 right-0 p-4">
+                   <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                 </div>
                  <h4 className="text-cyan-400 font-black text-[10px] uppercase tracking-widest mb-4">Multi-Device Handshake</h4>
-                 <div className="space-y-4">
-                   <div className="flex gap-3">
-                     <span className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-bold">1</span>
-                     <p className="text-xs text-slate-300"><span className="text-white font-bold">Host:</span> Share the "Recruit Allies" link.</p>
+                 <div className="space-y-4 mb-8">
+                   <div className="flex gap-4">
+                     <div className="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-500 text-cyan-400 flex items-center justify-center text-[11px] font-black shrink-0">1</div>
+                     <p className="text-xs text-slate-300 leading-relaxed"><span className="text-white font-bold">Host Initiation:</span> Share your Sector ID or Recruitment Link with allies.</p>
                    </div>
-                   <div className="flex gap-3">
-                     <span className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-bold">2</span>
-                     <p className="text-xs text-slate-300"><span className="text-white font-bold">Guests:</span> Open link, make moves, and tap <span className="text-white">"Push Orders"</span>.</p>
+                   <div className="flex gap-4">
+                     <div className="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-500 text-cyan-400 flex items-center justify-center text-[11px] font-black shrink-0">2</div>
+                     <p className="text-xs text-slate-300 leading-relaxed"><span className="text-white font-bold">Tactical Prep:</span> Allies open the link, choose an empire, and plan their moves.</p>
                    </div>
-                   <div className="flex gap-3">
-                     <span className="w-6 h-6 rounded-full bg-cyan-600 text-white flex items-center justify-center text-[10px] font-bold">3</span>
-                     <p className="text-xs text-slate-300"><span className="text-white font-bold">Host:</span> Ingest codes and <span className="text-white">"Execute Turn"</span>.</p>
+                   <div className="flex gap-4">
+                     <div className="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-500 text-cyan-400 flex items-center justify-center text-[11px] font-black shrink-0">3</div>
+                     <p className="text-xs text-slate-300 leading-relaxed"><span className="text-white font-bold">Order Push:</span> Allies tap "Push Tactical Data" to sync their intent to your bridge.</p>
                    </div>
                  </div>
+
+                 {isHost && onOpenInvite && (
+                   <div className="mt-6 p-4 bg-cyan-500/10 border-t border-cyan-500/20 rounded-b-3xl -mx-6 -mb-6">
+                     <button 
+                       onClick={() => {
+                         onClose();
+                         onOpenInvite();
+                       }}
+                       className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center justify-center gap-3"
+                     >
+                       <span>📡</span> OPEN RECRUITMENT PORTAL
+                     </button>
+                   </div>
+                 )}
                </div>
+
+               {!isHost && (
+                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
+                   <p className="text-[10px] text-amber-500 font-bold uppercase text-center leading-relaxed">
+                     ONLY THE SECTOR HOST (P1) CAN<br/>GENERATE RECRUITMENT LINKS
+                   </p>
+                 </div>
+               )}
             </div>
           )}
         </div>
 
         <div className="p-6 bg-slate-900/80 text-center border-t border-white/5">
-          <button onClick={onClose} className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-bold text-sm transition-all shadow-xl shadow-cyan-900/40 active:scale-95">Return to Star Map</button>
+          <button onClick={onClose} className="w-full py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-2xl font-bold text-sm transition-all active:scale-95">Dismiss Intelligence</button>
         </div>
       </div>
     </div>

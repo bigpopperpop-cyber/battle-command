@@ -13,12 +13,12 @@ import { getDatabase, ref, onValue, set, update, onDisconnect, get, Database } f
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
-  // IMPORTANT: Replace this with your actual Firebase Realtime Database URL
+  // Replace this with your actual Firebase Realtime Database URL
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
- databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
+
 let db: Database | null = null;
-const isConfigSet = firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("default-rtdb");
+const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
   const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -69,10 +69,6 @@ const App: React.FC = () => {
   }, [gameId, viewMode]);
 
   const hostGame = useCallback((pCount: number, aiCount: number, names: Record<string, string>, diff: AiDifficulty) => {
-    if (!db || !isConfigSet) {
-      alert("Relay Error: Firebase is not configured in App.tsx.");
-      return;
-    }
     const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
     const initialState = generateInitialState(pCount, aiCount, undefined, names, diff);
     
@@ -82,19 +78,20 @@ const App: React.FC = () => {
     setGameState(initialState);
     setHasStarted(true);
 
-    set(ref(db, `games/${newId}/state`), initialState);
-    set(ref(db, `lobby/${newId}`), {
-      name: `${names.P1}'s Empire`,
-      players: 1,
-      maxPlayers: pCount,
-      round: 1,
-      timestamp: Date.now()
-    });
-    onDisconnect(ref(db, `lobby/${newId}`)).remove();
+    if (db && !isConfigPlaceholder) {
+      set(ref(db, `games/${newId}/state`), initialState);
+      set(ref(db, `lobby/${newId}`), {
+        name: `${names.P1}'s Empire`,
+        players: 1,
+        maxPlayers: pCount,
+        round: 1,
+        timestamp: Date.now()
+      });
+      onDisconnect(ref(db, `lobby/${newId}`)).remove();
+    }
   }, []);
 
   const joinGame = useCallback((id: string, role: Owner) => {
-    if (!db) return;
     setGameId(id);
     setPlayerRole(role);
     setViewMode('PLAYER');
@@ -103,7 +100,10 @@ const App: React.FC = () => {
   }, []);
 
   const submitOrders = async () => {
-    if (!db || !gameId || !playerRole) return;
+    if (!db || !gameId || !playerRole || isConfigPlaceholder) {
+      if (isConfigPlaceholder) alert("Orders cannot be sent: Firebase is in Demo Mode. Update your databaseURL in App.tsx.");
+      return;
+    }
     const orders = {
       ships: gameState.ships.filter(s => s.owner === playerRole).map(s => ({ id: s.id, target: s.targetPlanetId })),
       builds: gameState.planets.filter(p => p.owner === playerRole).map(p => ({ id: p.id, mines: p.mines, factories: p.factories }))
@@ -113,18 +113,20 @@ const App: React.FC = () => {
   };
 
   const executeTurn = async () => {
-    if (!db || !gameId) return;
     setIsProcessing(true);
     
     try {
-      const ordersSnapshot = await get(ref(db, `games/${gameId}/orders`));
-      const allOrders = ordersSnapshot.val() || {};
+      let allOrders = {};
+      if (db && gameId && !isConfigPlaceholder) {
+        const ordersSnapshot = await get(ref(db, `games/${gameId}/orders`));
+        allOrders = ordersSnapshot.val() || {};
+      }
 
       let nextPlanets = gameState.planets.map(p => ({...p}));
       let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
-      // 1. Process Movements and Orbiting
+      // 1. Process Movements
       nextShips = nextShips.map(ship => {
         if (ship.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
@@ -159,9 +161,13 @@ const App: React.FC = () => {
         readyPlayers: []
       };
 
-      await set(ref(db, `games/${gameId}/state`), finalState);
-      await set(ref(db, `games/${gameId}/orders`), null);
-      await update(ref(db, `lobby/${gameId}`), { round: finalState.round });
+      if (db && gameId && !isConfigPlaceholder) {
+        await set(ref(db, `games/${gameId}/state`), finalState);
+        await set(ref(db, `games/${gameId}/orders`), null);
+        await update(ref(db, `lobby/${gameId}`), { round: finalState.round });
+      } else {
+        setGameState(finalState);
+      }
 
     } catch (e) {
       console.error("Critical Command Failure:", e);
@@ -185,24 +191,22 @@ const App: React.FC = () => {
           <h1 className="text-6xl font-black text-white italic tracking-tighter mb-1">STELLAR</h1>
           <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-12">Sub-Ether Command Hub</p>
           
-          {!isConfigSet && (
-            <div className="mb-8 p-6 bg-red-500/10 border border-red-500/30 rounded-[2rem] text-red-400 text-[10px] font-bold uppercase tracking-widest animate-pulse leading-relaxed">
-              Relay Offline<br/>Update DatabaseURL in App.tsx
+          {isConfigPlaceholder && (
+            <div className="mb-8 p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl text-amber-400 text-[9px] font-bold uppercase tracking-widest leading-relaxed">
+              DEMO MODE ACTIVE<br/>Firebase Relay Offline
             </div>
           )}
 
           <div className="space-y-4">
             <button 
               onClick={() => setIsNewGameOpen(true)}
-              disabled={!db}
-              className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-30 border-b-4 border-cyan-800"
+              className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 border-cyan-800"
             >
               Initialize New Sector
             </button>
             <button 
               onClick={() => setIsLobbyOpen(true)}
-              disabled={!db}
-              className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-3xl font-black text-xs uppercase tracking-widest border border-white/5 transition-all active:scale-95 disabled:opacity-30"
+              className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-3xl font-black text-xs uppercase tracking-widest border border-white/5 transition-all active:scale-95"
             >
               Scan Active Signatures
             </button>
@@ -220,7 +224,7 @@ const App: React.FC = () => {
       <header className="h-16 flex items-center justify-between px-8 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
         <div className="flex items-center gap-8">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none">Sector {gameId}</span>
+            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none">{isConfigPlaceholder ? 'LOCAL INSTANCE' : `Sector ${gameId}`}</span>
             <span className="text-xs font-bold text-slate-500">Bridge Mode: {viewMode} // Round {gameState.round}</span>
           </div>
           <div className="h-10 w-[1px] bg-white/10 hidden sm:block"></div>
@@ -236,7 +240,7 @@ const App: React.FC = () => {
           </div>
         </div>
         <div className="flex gap-3">
-          {viewMode === 'HOST' && (
+          {viewMode === 'HOST' && !isConfigPlaceholder && (
             <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 rounded-2xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20 hover:bg-cyan-600/30 transition-all">🔗</button>
           )}
           <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-sm border border-white/5">?</button>
@@ -295,8 +299,14 @@ const App: React.FC = () => {
       </main>
 
       <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
-      <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} frequency={gameId || ''} gameState={gameState} />
-      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
+      <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} frequency={gameId || 'LOCAL'} gameState={gameState} />
+      <HelpModal 
+        isOpen={isHelpOpen} 
+        onClose={() => setIsHelpOpen(false)} 
+        onOpenInvite={() => setIsInviteOpen(true)}
+        gameState={gameState} 
+        playerRole={playerRole} 
+      />
     </div>
   );
 };
