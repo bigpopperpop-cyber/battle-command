@@ -1,19 +1,22 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { GameState, Owner, AiDifficulty } from './types';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { GameState, Owner, AiDifficulty, Planet, Ship } from './types';
 import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
 import LobbyModal from './components/LobbyModal';
+import HelpModal from './components/HelpModal';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, onDisconnect, get, Database } from 'firebase/database';
 
+// --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
-  databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
+  // IMPORTANT: Replace this with your actual Firebase Realtime Database URL
+  databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
-
+ databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
 let db: Database | null = null;
 const isConfigSet = firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("default-rtdb");
 
@@ -36,9 +39,10 @@ const App: React.FC = () => {
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // Sync state from Firebase
+  // Real-time State Synchronization
   useEffect(() => {
     if (!db || !gameId) return;
     const stateRef = ref(db, `games/${gameId}/state`);
@@ -49,7 +53,7 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [gameId]);
 
-  // Sync ready status from Firebase (Orders)
+  // Monitor Incoming Orders (Host Only)
   useEffect(() => {
     if (!db || !gameId || viewMode !== 'HOST') return;
     const ordersRef = ref(db, `games/${gameId}/orders`);
@@ -66,7 +70,7 @@ const App: React.FC = () => {
 
   const hostGame = useCallback((pCount: number, aiCount: number, names: Record<string, string>, diff: AiDifficulty) => {
     if (!db || !isConfigSet) {
-      alert("Relay Error: Check App.tsx configuration.");
+      alert("Relay Error: Firebase is not configured in App.tsx.");
       return;
     }
     const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -80,7 +84,7 @@ const App: React.FC = () => {
 
     set(ref(db, `games/${newId}/state`), initialState);
     set(ref(db, `lobby/${newId}`), {
-      name: `${names.P1}'s Sector`,
+      name: `${names.P1}'s Empire`,
       players: 1,
       maxPlayers: pCount,
       round: 1,
@@ -116,12 +120,11 @@ const App: React.FC = () => {
       const ordersSnapshot = await get(ref(db, `games/${gameId}/orders`));
       const allOrders = ordersSnapshot.val() || {};
 
-      let nextState = { ...gameState };
-      let nextPlanets = [...gameState.planets];
-      let nextShips = [...gameState.ships];
+      let nextPlanets = gameState.planets.map(p => ({...p}));
+      let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
-      // 1. Process Movements
+      // 1. Process Movements and Orbiting
       nextShips = nextShips.map(ship => {
         if (ship.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
@@ -130,7 +133,7 @@ const App: React.FC = () => {
             const dy = target.y - ship.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist <= ship.speed) {
-              return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id };
+              return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id, targetPlanetId: undefined };
             } else {
               return { ...ship, x: ship.x + (dx/dist) * ship.speed, y: ship.y + (dy/dist) * ship.speed, status: 'MOVING' };
             }
@@ -139,17 +142,16 @@ const App: React.FC = () => {
         return ship;
       });
 
-      // 2. Economy & Growth
+      // 2. Economy Tick
       nextPlanets = nextPlanets.map(p => {
         if (p.owner === 'NEUTRAL') return p;
-        const growth = 1;
         const income = (p.mines * 50) + (p.factories * 20) + (p.population * 50);
         nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
-        return { ...p, population: Math.min(MAX_PLANET_POPULATION, p.population + growth) };
+        return { ...p, population: Math.min(MAX_PLANET_POPULATION, p.population + 1) };
       });
 
-      const finalState = {
-        ...nextState,
+      const finalState: GameState = {
+        ...gameState,
         round: gameState.round + 1,
         planets: nextPlanets,
         ships: nextShips,
@@ -162,7 +164,7 @@ const App: React.FC = () => {
       await update(ref(db, `lobby/${gameId}`), { round: finalState.round });
 
     } catch (e) {
-      console.error(e);
+      console.error("Critical Command Failure:", e);
     } finally {
       setIsProcessing(false);
     }
@@ -170,22 +172,22 @@ const App: React.FC = () => {
 
   const currentStats = useMemo(() => {
     const role = playerRole || 'P1';
-    const myP = gameState.planets.filter(p => p.owner === role);
-    const income = myP.reduce((a, p) => a + (p.mines * 50) + (p.factories * 20) + (p.population * 50), 0);
+    const myPlanets = gameState.planets.filter(p => p.owner === role);
+    const income = myPlanets.reduce((a, p) => a + (p.mines * 50) + (p.factories * 20) + (p.population * 50), 0);
     return { credits: gameState.playerCredits[role] || 0, income };
   }, [gameState, playerRole]);
 
   if (!hasStarted) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center p-8 z-[500] star-bg">
-        <div className="w-full max-w-md glass-card rounded-[3rem] p-12 text-center shadow-2xl relative overflow-hidden">
+        <div className="w-full max-w-md glass-card rounded-[3rem] p-12 text-center shadow-2xl relative overflow-hidden border-cyan-500/20">
           <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
           <h1 className="text-6xl font-black text-white italic tracking-tighter mb-1">STELLAR</h1>
           <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-12">Sub-Ether Command Hub</p>
           
           {!isConfigSet && (
-            <div className="mb-8 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 text-[10px] font-bold uppercase tracking-widest animate-pulse">
-              Relay Offline: Update databaseURL
+            <div className="mb-8 p-6 bg-red-500/10 border border-red-500/30 rounded-[2rem] text-red-400 text-[10px] font-bold uppercase tracking-widest animate-pulse leading-relaxed">
+              Relay Offline<br/>Update DatabaseURL in App.tsx
             </div>
           )}
 
@@ -193,16 +195,16 @@ const App: React.FC = () => {
             <button 
               onClick={() => setIsNewGameOpen(true)}
               disabled={!db}
-              className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-50 border-b-4 border-cyan-800"
+              className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 disabled:opacity-30 border-b-4 border-cyan-800"
             >
-              Initialize New Galaxy
+              Initialize New Sector
             </button>
             <button 
               onClick={() => setIsLobbyOpen(true)}
               disabled={!db}
-              className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-3xl font-black text-xs uppercase tracking-widest border border-white/5 transition-all active:scale-95 disabled:opacity-50"
+              className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-3xl font-black text-xs uppercase tracking-widest border border-white/5 transition-all active:scale-95 disabled:opacity-30"
             >
-              Search Active Sectors
+              Scan Active Signatures
             </button>
           </div>
         </div>
@@ -215,30 +217,29 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk']">
-      {/* Bridge Header */}
-      <header className="h-14 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-xl z-[100]">
-        <div className="flex items-center gap-6">
+      <header className="h-16 flex items-center justify-between px-8 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
+        <div className="flex items-center gap-8">
           <div className="flex flex-col">
             <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none">Sector {gameId}</span>
-            <span className="text-xs font-bold text-slate-500">{viewMode} // Round {gameState.round}</span>
+            <span className="text-xs font-bold text-slate-500">Bridge Mode: {viewMode} // Round {gameState.round}</span>
           </div>
-          <div className="h-8 w-[1px] bg-white/10 hidden sm:block"></div>
-          <div className="flex gap-4">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-slate-500 uppercase">Reserves</span>
-              <span className="text-sm font-bold text-amber-500">💰 {currentStats.credits}</span>
+          <div className="h-10 w-[1px] bg-white/10 hidden sm:block"></div>
+          <div className="flex gap-6">
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black text-slate-500 uppercase">Reserves</span>
+              <span className="text-sm font-bold text-amber-500 tracking-tight">💰 {currentStats.credits}</span>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-black text-slate-500 uppercase">Net</span>
+            <div className="flex flex-col">
+              <span className="text-[9px] font-black text-slate-500 uppercase">Turn Net</span>
               <span className="text-sm font-bold text-emerald-500">+{currentStats.income}</span>
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-3">
           {viewMode === 'HOST' && (
-            <button onClick={() => setIsInviteOpen(true)} className="w-10 h-10 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20">🔗</button>
+            <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 rounded-2xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20 hover:bg-cyan-600/30 transition-all">🔗</button>
           )}
-          <button className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm border border-white/5">?</button>
+          <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 rounded-2xl bg-slate-800 flex items-center justify-center text-sm border border-white/5">?</button>
         </div>
       </header>
 
@@ -250,18 +251,17 @@ const App: React.FC = () => {
           onSelect={(id) => setSelectedId(id)} 
         />
 
-        {/* Tactical Overlays */}
         {viewMode === 'HOST' && (
-          <div className="absolute top-6 left-6 z-40 bg-slate-950/90 border border-white/10 p-5 rounded-[2rem] w-48 shadow-2xl backdrop-blur-3xl">
-            <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-4">Command Units</h4>
-            <div className="space-y-2 mb-6">
+          <div className="absolute top-8 left-8 z-40 bg-slate-950/90 border border-white/10 p-6 rounded-[2.5rem] w-52 shadow-2xl backdrop-blur-3xl">
+            <h4 className="text-[9px] font-black text-slate-500 uppercase tracking-[0.2em] mb-4">Command Ready</h4>
+            <div className="space-y-2.5 mb-8">
               {Array.from({length: gameState.playerCount}).map((_, i) => {
                 const pId = `P${i+1}` as Owner;
                 const isReady = gameState.readyPlayers.includes(pId) || gameState.aiPlayers.includes(pId);
                 return (
-                  <div key={pId} className="flex justify-between items-center text-[10px]">
-                    <span style={{ color: PLAYER_COLORS[pId] }} className="font-black">{pId} Unit</span>
-                    <span className={isReady ? 'text-emerald-500' : 'text-slate-700'}>{isReady ? 'SYNCED' : 'AWAITING'}</span>
+                  <div key={pId} className="flex justify-between items-center text-[11px] font-bold">
+                    <span style={{ color: PLAYER_COLORS[pId] }}>Empire {pId}</span>
+                    <span className={isReady ? 'text-emerald-500' : 'text-slate-700'}>{isReady ? 'SYNC' : 'WAIT'}</span>
                   </div>
                 );
               })}
@@ -269,7 +269,7 @@ const App: React.FC = () => {
             <button 
               onClick={executeTurn}
               disabled={isProcessing}
-              className="w-full py-4 bg-emerald-600 rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg active:scale-95 disabled:opacity-50 border-b-4 border-emerald-800"
+              className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-3xl text-[10px] font-black uppercase tracking-widest shadow-lg transition-all active:scale-95 disabled:opacity-30 border-b-4 border-emerald-800"
             >
               {isProcessing ? 'CALCULATING...' : 'EXECUTE TURN'}
             </button>
@@ -277,25 +277,26 @@ const App: React.FC = () => {
         )}
 
         {viewMode === 'PLAYER' && (
-          <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-4 z-40">
+          <div className="absolute bottom-12 left-1/2 -translate-x-1/2 flex items-center gap-6 z-40">
             <button 
               onClick={() => setIsAdvisorOpen(true)}
-              className="w-16 h-16 bg-cyan-600 rounded-[2rem] flex items-center justify-center text-3xl shadow-xl border-b-4 border-cyan-800 active:scale-90"
+              className="w-20 h-20 bg-cyan-600 rounded-[2.5rem] flex items-center justify-center text-4xl shadow-2xl border-b-4 border-cyan-800 active:scale-90 transition-all"
             >
               ❂
             </button>
             <button 
               onClick={submitOrders}
-              className="px-10 h-16 bg-emerald-600 text-white rounded-[2rem] font-black text-xs uppercase tracking-widest shadow-xl border-b-4 border-emerald-800 active:scale-95"
+              className="px-12 h-20 bg-emerald-600 text-white rounded-[2.5rem] font-black text-sm uppercase tracking-[0.2em] shadow-2xl border-b-4 border-emerald-800 active:scale-95 transition-all"
             >
-              Broadcast Tactical Burst 🛰️
+              PUSH TACTICAL DATA 🛰️
             </button>
           </div>
         )}
       </main>
 
       <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
-      <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} gameId={gameId} playerCount={gameState.playerCount} />
+      <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} frequency={gameId || ''} gameState={gameState} />
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
     </div>
   );
 };

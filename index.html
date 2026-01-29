@@ -31,7 +31,12 @@
       .custom-scrollbar::-webkit-scrollbar { width: 4px; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
       @keyframes scan { from { transform: translateY(-100%); } to { transform: translateY(100%); } }
-      .scanline { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(to bottom, transparent, rgba(34, 211, 238, 0.05) 50%, transparent); background-size: 100% 8px; animation: scan 12s linear infinite; pointer-events: none; z-index: 1000; }
+      .scanline { 
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+        background: linear-gradient(to bottom, transparent, rgba(34, 211, 238, 0.05) 50%, transparent); 
+        background-size: 100% 8px; animation: scan 12s linear infinite; 
+        pointer-events: none; z-index: 1000; 
+      }
     </style>
     <script type="importmap">
 {

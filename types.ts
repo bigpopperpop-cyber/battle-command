@@ -8,7 +8,7 @@ export interface Planet {
   x: number;
   y: number;
   owner: Owner;
-  population: number; // Current people (0-5)
+  population: number; 
   resources: number; 
   factories: number;
   mines: number;
@@ -27,21 +27,16 @@ export interface Ship {
   y: number;
   targetPlanetId?: string;
   currentPlanetId?: string;
+  // Added missing properties to support cargo and combat mechanics
   cargo: number;
   maxCargo: number;
-  cargoPeople: number; // Current people being transported
-  maxPeopleCargo: number; // Max people capacity
+  cargoPeople: number;
+  maxPeopleCargo: number;
+  attack: number;
   hp: number;
   maxHp: number;
-  attack: number;
   speed: number;
   status: 'IDLE' | 'MOVING' | 'ORBITING';
-}
-
-export interface PlayerOrders {
-  playerId: Owner;
-  shipOrders: { shipId: string; targetPlanetId: string }[];
-  planetOrders: { planetId: string; builds: ('MINE' | 'FACTORY')[] }[];
 }
 
 export interface GameState {
@@ -51,16 +46,12 @@ export interface GameState {
   ships: Ship[];
   playerCredits: Record<string, number>;
   playerNames: Record<string, string>;
-  logs: string[];
   playerCount: number;
   aiPlayers: Owner[];
   aiDifficulty: AiDifficulty;
-  isHost: boolean;
   activePlayer: Owner;
   readyPlayers: Owner[]; 
-}
-
-export interface AdvisorMessage {
-  role: 'assistant' | 'user';
-  content: string;
+  // Added missing properties for game logs and host identification
+  logs: string[];
+  isHost?: boolean;
 }
