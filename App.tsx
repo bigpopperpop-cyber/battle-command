@@ -12,8 +12,8 @@ import { getAiMoves } from './services/geminiService';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
 import { getDatabase, ref, onValue, set, update, push, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
 
-// NOTE: In a production app, these should be in environment variables.
-// For this demo, we'll assume a standard Firebase setup or provide a mock-ready structure.
+// --- FIREBASE CONFIGURATION ---
+// Replace the databaseURL below with the one from your Firebase Console
 const firebaseConfig = {
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
@@ -39,9 +39,6 @@ const App: React.FC = () => {
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
 
-  // --- Firebase Networking Logic ---
-
-  // 1. Hosting a Game
   const hostNewGame = useCallback((pCount: number, aiCount: number, names: Record<string, string>, diff: AiDifficulty) => {
     const newState = generateInitialState(pCount, aiCount, undefined, names, diff);
     const newGameId = Math.random().toString(36).substring(2, 8).toUpperCase();
@@ -52,7 +49,6 @@ const App: React.FC = () => {
     setPlayerRole('P1');
     setHasInitiated(true);
 
-    // Push to Firebase
     set(ref(db, `games/${newGameId}/state`), newState);
     set(ref(db, `lobby/${newGameId}`), {
       name: `${names.P1}'s Galaxy`,
@@ -62,10 +58,8 @@ const App: React.FC = () => {
       timestamp: Date.now()
     });
 
-    // Cleanup on disconnect
     onDisconnect(ref(db, `lobby/${newGameId}`)).remove();
     
-    // Listen for incoming orders from players
     onValue(ref(db, `games/${newGameId}/orders`), (snapshot) => {
       const orders = snapshot.val();
       if (orders) {
@@ -75,7 +69,6 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // 2. Joining a Game
   const joinExistingGame = useCallback((id: string, role: Owner) => {
     setGameId(id);
     setViewMode('PLAYER');
@@ -91,7 +84,6 @@ const App: React.FC = () => {
     });
   }, []);
 
-  // 3. Submitting Orders (Player)
   const submitOrders = async () => {
     if (!gameId || !playerRole) return;
     const myOrders = {
@@ -103,19 +95,16 @@ const App: React.FC = () => {
     alert("SUB-ETHER TRANSMISSION COMPLETE");
   };
 
-  // 4. Executing Turn (Host)
   const executeTurn = async () => {
     if (!gameId) return;
     setIsProcessing(true);
 
-    // Fetch all orders from Firebase
     onValue(ref(db, `games/${gameId}/orders`), async (snapshot) => {
       const allOrders = snapshot.val() || {};
       let nextPlanets = gameState.planets.map(p => ({...p}));
       let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
-      // Apply Human Orders
       Object.keys(allOrders).forEach((pId) => {
         const orders = allOrders[pId];
         orders.ships.forEach((o: any) => {
@@ -128,8 +117,27 @@ const App: React.FC = () => {
         });
       });
 
-      // AI Resolution and Game Logic (Simplified here for space)
-      // ... (Standard ship movement and resource logic from previous version) ...
+      // AI and Movement logic (simplified)
+      nextShips.forEach(s => {
+        if (s.status === 'MOVING' && s.targetPlanetId) {
+          const target = nextPlanets.find(p => p.id === s.targetPlanetId);
+          if (target) {
+            const dx = target.x - s.x; const dy = target.y - s.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist <= s.speed) { s.x = target.x; s.y = target.y; s.status = 'ORBITING'; s.currentPlanetId = target.id; }
+            else { s.x += (dx / dist) * s.speed; s.y += (dy / dist) * s.speed; }
+          }
+        }
+      });
+
+      nextPlanets.forEach(p => {
+        if (p.owner !== 'NEUTRAL') {
+          p.population = Math.min(MAX_PLANET_POPULATION, p.population + 1);
+          const inc = (p.mines * 50) + (p.factories * 20) + (p.population * 50);
+          nextCredits[p.owner] = (nextCredits[p.owner] || 0) + inc;
+          p.defense = Math.min(p.maxDefense, p.defense + 10);
+        }
+      });
 
       const finalState = {
         ...gameState,
@@ -140,7 +148,6 @@ const App: React.FC = () => {
         readyPlayers: []
       };
 
-      // Push final state back to Firebase and clear orders for next round
       await set(ref(db, `games/${gameId}/state`), finalState);
       await set(ref(db, `games/${gameId}/orders`), null);
       update(ref(db, `lobby/${gameId}`), { round: finalState.round });
