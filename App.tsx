@@ -200,6 +200,12 @@ const App: React.FC = () => {
     setSelectedId(null);
   };
 
+  // Fix: Added handleMapSelect to manage selection logic between the MapView and the Main App component
+  const handleMapSelect = useCallback((id: string, type: 'PLANET' | 'SHIP') => {
+    setSelectedId(id);
+    setSelectedType(type);
+  }, []);
+
   const economyStats = useMemo(() => {
     const role = playerRole || 'P1';
     const myP = gameState.planets.filter(p => p.owner === role);
