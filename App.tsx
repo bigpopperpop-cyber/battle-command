@@ -9,19 +9,27 @@ import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
 import LobbyModal from './components/LobbyModal';
 import { getAiMoves } from './services/geminiService';
-import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
-import { getDatabase, ref, onValue, set, update, push, onDisconnect } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import { getDatabase, ref, onValue, set, update, push, onDisconnect, get } from 'firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
-// Replace the databaseURL below with the one from your Firebase Console
 const firebaseConfig = {
+  // IMPORTANT: Replace this with your actual Firebase Realtime Database URL
+  // Example: "https://your-project-id-default-rtdb.firebaseio.com"
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getDatabase(app);
+// Initialize Firebase App and Database service safely
+let db: any = null;
+const isConfigSet = firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("default-rtdb");
 
-const SAVE_KEY = 'stellar_commander_save_v7';
+try {
+  // Standard Firebase Modular initialization
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  db = getDatabase(app);
+} catch (e) {
+  console.error("Firebase Initialization Failed:", e);
+}
 
 const App: React.FC = () => {
   const [hasInitiated, setHasInitiated] = useState(false);
@@ -40,6 +48,11 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   const hostNewGame = useCallback((pCount: number, aiCount: number, names: Record<string, string>, diff: AiDifficulty) => {
+    if (!db || !isConfigSet) {
+      alert("Relay Error: Firebase Database not configured. Please enter your Realtime Database URL in App.tsx.");
+      return;
+    }
+    
     const newState = generateInitialState(pCount, aiCount, undefined, names, diff);
     const newGameId = Math.random().toString(36).substring(2, 8).toUpperCase();
     
@@ -70,6 +83,7 @@ const App: React.FC = () => {
   }, []);
 
   const joinExistingGame = useCallback((id: string, role: Owner) => {
+    if (!db) return;
     setGameId(id);
     setViewMode('PLAYER');
     setPlayerRole(role);
@@ -85,7 +99,7 @@ const App: React.FC = () => {
   }, []);
 
   const submitOrders = async () => {
-    if (!gameId || !playerRole) return;
+    if (!gameId || !playerRole || !db) return;
     const myOrders = {
       ships: gameState.ships.filter(s => s.owner === playerRole).map(s => ({ id: s.id, t: s.targetPlanetId, cp_p: s.cargoPeople })),
       builds: gameState.planets.filter(p => p.owner === playerRole).map(p => ({ id: p.id, m: p.mines, f: p.factories, pop: p.population }))
@@ -96,28 +110,29 @@ const App: React.FC = () => {
   };
 
   const executeTurn = async () => {
-    if (!gameId) return;
+    if (!gameId || !db) return;
     setIsProcessing(true);
 
-    onValue(ref(db, `games/${gameId}/orders`), async (snapshot) => {
+    try {
+      const snapshot = await get(ref(db, `games/${gameId}/orders`));
       const allOrders = snapshot.val() || {};
+      
       let nextPlanets = gameState.planets.map(p => ({...p}));
       let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
       Object.keys(allOrders).forEach((pId) => {
         const orders = allOrders[pId];
-        orders.ships.forEach((o: any) => {
+        orders.ships?.forEach((o: any) => {
           const ship = nextShips.find(s => s.id === o.id);
           if (ship) { ship.status = 'MOVING'; ship.targetPlanetId = o.t; ship.currentPlanetId = undefined; }
         });
-        orders.builds.forEach((o: any) => {
+        orders.builds?.forEach((o: any) => {
           const planet = nextPlanets.find(p => p.id === o.id);
           if (planet) { planet.mines = o.m; planet.factories = o.f; planet.population = o.pop; }
         });
       });
 
-      // AI and Movement logic (simplified)
       nextShips.forEach(s => {
         if (s.status === 'MOVING' && s.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === s.targetPlanetId);
@@ -150,11 +165,14 @@ const App: React.FC = () => {
 
       await set(ref(db, `games/${gameId}/state`), finalState);
       await set(ref(db, `games/${gameId}/orders`), null);
-      update(ref(db, `lobby/${gameId}`), { round: finalState.round });
+      await update(ref(db, `lobby/${gameId}`), { round: finalState.round });
 
+    } catch (error) {
+      console.error("Turn Execution Error:", error);
+    } finally {
       setIsProcessing(false);
       setSelectedId(null);
-    }, { onlyOnce: true });
+    }
   };
 
   useEffect(() => {
@@ -184,17 +202,25 @@ const App: React.FC = () => {
            <h1 className="text-5xl font-black text-white italic mb-2 tracking-tighter relative z-10">STELLAR</h1>
            <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-12 relative z-10">Cloud Command Interface</p>
            
+           {!isConfigSet && (
+             <div className="mb-8 p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 text-[10px] font-bold uppercase tracking-widest relative z-10 animate-pulse">
+               Relay Offline: Update databaseURL in App.tsx
+             </div>
+           )}
+
            <div className="space-y-4 relative z-10">
               <button 
                 onClick={() => setIsNewGameModalOpen(true)} 
-                className="w-full py-6 bg-cyan-600 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 border-cyan-800"
+                className="w-full py-6 bg-cyan-600 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 border-cyan-800 disabled:opacity-50"
+                disabled={!db}
               >
                 CREATE NEW GALAXY
               </button>
               
               <button 
                 onClick={() => setIsLobbyOpen(true)}
-                className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-2 border-white/5 hover:border-cyan-500/50"
+                className="w-full py-5 bg-slate-900 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-2 border-white/5 hover:border-cyan-500/50 disabled:opacity-50"
+                disabled={!db}
               >
                 FIND ACTIVE GALAXY
               </button>

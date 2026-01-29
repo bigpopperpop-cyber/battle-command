@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { ref, onValue } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-database.js';
+import { ref, onValue } from 'firebase/database';
 import { Owner } from '../types';
 
 interface LobbyModalProps {
@@ -15,7 +15,7 @@ const LobbyModal: React.FC<LobbyModalProps> = ({ isOpen, onClose, onJoin, db }) 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !db) return;
     const lobbyRef = ref(db, 'lobby');
     const unsubscribe = onValue(lobbyRef, (snapshot) => {
       const data = snapshot.val();
@@ -28,6 +28,9 @@ const LobbyModal: React.FC<LobbyModalProps> = ({ isOpen, onClose, onJoin, db }) 
       } else {
         setGames([]);
       }
+      setLoading(false);
+    }, (error) => {
+      console.error("Lobby Load Error:", error);
       setLoading(false);
     });
     return () => unsubscribe();
@@ -50,6 +53,11 @@ const LobbyModal: React.FC<LobbyModalProps> = ({ isOpen, onClose, onJoin, db }) 
             <div className="py-12 text-center">
               <div className="w-10 h-10 border-2 border-slate-800 border-t-cyan-500 rounded-full animate-spin mx-auto mb-4" />
               <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Scanning Sectors...</p>
+            </div>
+          ) : !db ? (
+            <div className="py-12 text-center border-2 border-red-500/20 bg-red-500/5 rounded-[2.5rem]">
+              <p className="text-xs text-red-400 font-bold mb-2">Relay Connection Error</p>
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest">Check Firebase Configuration</p>
             </div>
           ) : games.length === 0 ? (
             <div className="py-12 text-center border-2 border-dashed border-white/5 rounded-[2.5rem]">
@@ -83,9 +91,10 @@ const LobbyModal: React.FC<LobbyModalProps> = ({ isOpen, onClose, onJoin, db }) 
                     value=""
                   >
                     <option value="" disabled>JOIN</option>
-                    {[2,3,4,5,6,7,8].slice(0, g.maxPlayers - 1).map(i => (
-                      <option key={i} value={`P${i}`}>AS P{i}</option>
-                    ))}
+                    {Array.from({length: g.maxPlayers - 1}).map((_, i) => {
+                      const pId = `P${i+2}`;
+                      return <option key={pId} value={pId}>AS {pId}</option>;
+                    })}
                   </select>
                 </div>
               </div>
