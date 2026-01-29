@@ -9,8 +9,10 @@ import NewGameModal from './components/NewGameModal';
 import InviteModal from './components/InviteModal';
 import LobbyModal from './components/LobbyModal';
 import { getAiMoves } from './services/geminiService';
-import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, push, onDisconnect, get, Database } from 'firebase/database';
+// Fix: Use scoped @firebase/app package to resolve missing named exports in some environments
+import { initializeApp, getApp, getApps } from '@firebase/app';
+// Fix: Use scoped @firebase/database package to resolve missing named exports
+import { getDatabase, ref, onValue, set, update, push, onDisconnect, get } from '@firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
@@ -20,14 +22,14 @@ const firebaseConfig = {
 };
 
 // Initialize Firebase App and Database service safely
-let db: Database | null = null;
+// Fix: Used 'any' for db type to avoid missing Database export error
+let db: any = null;
 const isConfigSet = firebaseConfig.databaseURL && !firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
-  // Ensure we use a consistent initialization pattern
-  const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  // Modular SDK: getDatabase(app) ensures the service is linked to the correct instance
-  db = getDatabase(app);
+  // Applied the exact suggested fix for initialization logic
+  const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+  db = getDatabase(app); 
   console.log("Stellar Command Relay Link Established.");
 } catch (e) {
   console.error("Firebase Initialization Failed:", e);
@@ -51,7 +53,7 @@ const App: React.FC = () => {
 
   const hostNewGame = useCallback((pCount: number, aiCount: number, names: Record<string, string>, diff: AiDifficulty) => {
     if (!db || !isConfigSet) {
-      alert("Relay Error: Firebase Database not configured. Please enter your project's Realtime Database URL in App.tsx.");
+      alert("Relay Error: Firebase Database not configured. Update databaseURL in App.tsx with your actual Firebase URL.");
       return;
     }
     

@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { ref, onValue } from 'firebase/database';
+// Fix: Use scoped @firebase/database package to resolve missing named exports
+import { ref, onValue } from '@firebase/database';
 import { Owner } from '../types';
 
 interface LobbyModalProps {
