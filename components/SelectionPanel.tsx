@@ -1,7 +1,7 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { Planet, Ship, Owner, ShipType } from '../types';
-import { PLAYER_COLORS, SHIP_STATS, MAX_FACTORIES, MAX_MINES, SHIP_COSTS } from '../gameLogic';
+import { PLAYER_COLORS, SHIP_STATS, MAX_FACTORIES, MAX_MINES, SHIP_COSTS, getEmpireBonuses } from '../gameLogic';
 
 interface SelectionPanelProps {
   selection: Planet | Ship | null;
@@ -12,10 +12,11 @@ interface SelectionPanelProps {
   isSettingCourse: boolean;
   isSpied?: boolean;
   ships?: Ship[];
+  planets?: Planet[];
 }
 
 const SelectionPanel: React.FC<SelectionPanelProps> = ({ 
-  selection, onClose, playerRole, credits, onIssueOrder, isSettingCourse, isSpied, ships = []
+  selection, onClose, playerRole, credits, onIssueOrder, isSettingCourse, isSpied, ships = [], planets = []
 }) => {
   if (!selection) return null;
 
@@ -23,6 +24,16 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
   const isMine = selection.owner === playerRole;
   const pColor = PLAYER_COLORS[selection.owner];
   const canSeeDetails = isMine || isSpied;
+
+  // New mechanic: Calculate discounted costs
+  const bonuses = useMemo(() => {
+    if (!playerRole || !planets.length) return { discount: 0, strength: 1, factoryCount: 0 };
+    return getEmpireBonuses(planets, playerRole);
+  }, [planets, playerRole]);
+
+  const getCost = (type: ShipType) => {
+    return Math.floor(SHIP_STATS[type].cost * (1 - bonuses.discount));
+  };
 
   // Check if I am being spied ON at this planet
   const hostilesOrbiting = isPlanet && !isMine && selection.owner !== 'NEUTRAL' ? [] : 
@@ -110,19 +121,27 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
                 
                 {selection.factories > 0 && (
                   <div className="pt-2">
-                    <p className="text-[7px] font-black text-slate-600 uppercase mb-2">Build Vessel</p>
+                    <div className="flex justify-between items-center mb-2">
+                       <p className="text-[7px] font-black text-slate-600 uppercase">Build Vessel</p>
+                       {bonuses.discount > 0 && (
+                         <span className="text-[7px] font-black text-emerald-500 uppercase">-{Math.floor(bonuses.discount * 100)}% Industrial Discount</span>
+                       )}
+                    </div>
                     <div className="grid grid-cols-3 landscape:grid-cols-1 gap-1.5">
-                      {(['SCOUT', 'FREIGHTER', 'WARSHIP'] as ShipType[]).map(type => (
-                        <button 
-                          key={type}
-                          disabled={credits < SHIP_COSTS[type]}
-                          onClick={() => onIssueOrder('BUILD_SHIP', { type })}
-                          className="py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all disabled:opacity-20 flex flex-col items-center justify-center"
-                        >
-                          <span>{type}</span>
-                          <span className="text-cyan-500">{SHIP_COSTS[type]}</span>
-                        </button>
-                      ))}
+                      {(['SCOUT', 'FREIGHTER', 'WARSHIP'] as ShipType[]).map(type => {
+                        const cost = getCost(type);
+                        return (
+                          <button 
+                            key={type}
+                            disabled={credits < cost}
+                            onClick={() => onIssueOrder('BUILD_SHIP', { type })}
+                            className="py-2 bg-white/5 hover:bg-white/10 border border-white/10 text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all disabled:opacity-20 flex flex-col items-center justify-center"
+                          >
+                            <span>{type}</span>
+                            <span className="text-cyan-500">{cost}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}

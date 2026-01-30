@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { GameState, Owner, Planet, Ship } from '../types';
-import { PLAYER_COLORS, SHIP_STATS, MAX_PLANET_POPULATION, MAX_FACTORIES, MAX_MINES } from '../gameLogic';
+import { PLAYER_COLORS, SHIP_STATS, MAX_PLANET_POPULATION, MAX_FACTORIES, MAX_MINES, getEmpireBonuses } from '../gameLogic';
 
 export type HelpTab = 'GOAL' | 'INTERFACE' | 'ECONOMY' | 'COMMS';
 
@@ -27,6 +27,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
   const isHost = playerRole === 'P1';
   const myPlanets = isPlayer && gameState ? gameState.planets.filter(p => p.owner === playerRole) : [];
   const myShips = isPlayer && gameState ? gameState.ships.filter(s => s.owner === playerRole) : [];
+
+  const bonuses = isPlayer && gameState ? getEmpireBonuses(gameState.planets, playerRole!) : { discount: 0, strength: 1, factoryCount: 0, scoutBonus: 0, warshipCapacity: 0 };
 
   const TabButton: React.FC<{ id: HelpTab; label: string; icon: string }> = ({ id, label, icon }) => (
     <button
@@ -131,6 +133,25 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               {isPlayer ? (
                 <>
+                  <div className="p-6 bg-gradient-to-br from-cyan-500/10 to-transparent border border-cyan-500/20 rounded-[2.5rem] mb-4">
+                    <h4 className="text-cyan-400 font-black text-[10px] uppercase tracking-widest mb-2">Imperial Industrial Milestones</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="bg-slate-900/40 p-3 rounded-2xl">
+                         <p className="text-[8px] font-black text-slate-500 uppercase mb-1">Scout Sabotage (15+ Fact.)</p>
+                         <p className="text-lg font-bold text-emerald-400">+{Math.floor(bonuses.scoutBonus * 100)}% Bonus</p>
+                       </div>
+                       <div className="bg-slate-900/40 p-3 rounded-2xl">
+                         <p className="text-[8px] font-black text-slate-500 uppercase mb-1">Warship Transport</p>
+                         <p className="text-lg font-bold text-cyan-400">{bonuses.warshipCapacity} Person Cap.</p>
+                       </div>
+                    </div>
+                    <div className="mt-4 space-y-1">
+                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">20 Factories:</span> Warships can carry 1 person.</p>
+                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">25 Factories:</span> Warships can carry 2 people.</p>
+                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">30 Factories:</span> Warships can carry 4 people.</p>
+                    </div>
+                  </div>
+
                   <div className="p-6 bg-gradient-to-br from-amber-500/10 to-transparent border border-amber-500/20 rounded-[2.5rem]">
                     <div className="flex justify-between items-end mb-4">
                        <div>
@@ -139,18 +160,18 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                        </div>
                        <div className="text-right">
                           <p className="text-[10px] font-black text-emerald-500 uppercase mb-1">Turn Income</p>
-                          <p className="text-xl font-bold text-emerald-400">+{myPlanets.reduce((a, p) => a + (p.mines * 50) + (p.factories * 20) + (p.population * 50), 0)}</p>
+                          <p className="text-xl font-bold text-emerald-400">+{myPlanets.reduce((a, p) => a + (p.mines * 50) + (p.factories * 20) + (Math.floor(p.population) * 50), 0)}</p>
                        </div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-2 gap-4">
                     <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/5">
-                      <h5 className="text-cyan-400 font-black text-[10px] uppercase mb-1">Factories ({MAX_FACTORIES} Max)</h5>
-                      <p className="text-[11px] text-slate-400">Determines shipbuilding speed and capacity.</p>
+                      <h5 className="text-cyan-400 font-black text-[10px] uppercase mb-1">Factories ({MAX_FACTORIES} Max/Pl)</h5>
+                      <p className="text-[11px] text-slate-400">Powers milestones and provides global construction bonuses.</p>
                     </div>
                     <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/5">
-                      <h5 className="text-amber-400 font-black text-[10px] uppercase mb-1">Mines ({MAX_MINES} Max)</h5>
+                      <h5 className="text-amber-400 font-black text-[10px] uppercase mb-1">Mines ({MAX_MINES} Max/Pl)</h5>
                       <p className="text-[11px] text-slate-400">Major source of turn-based credit income.</p>
                     </div>
                   </div>
@@ -161,7 +182,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                       <div key={p.id} className="grid grid-cols-4 gap-2 p-4 bg-slate-900/50 rounded-2xl border border-white/5">
                          <div className="col-span-2">
                             <p className="text-xs font-bold text-white truncate">{p.name}</p>
-                            <p className="text-[9px] font-black text-slate-500 uppercase">👤 {p.population} / {MAX_PLANET_POPULATION} Citizens</p>
+                            <p className="text-[9px] font-black text-slate-500 uppercase">👤 {Math.floor(p.population)} / {MAX_PLANET_POPULATION} Citizens</p>
                          </div>
                          <div className="text-center">
                             <p className="text-[8px] font-black text-slate-600 uppercase">Mines</p>
@@ -185,7 +206,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                   <div className="p-5 bg-slate-900/80 rounded-2xl border border-white/5">
                     <div className="text-2xl mb-2">🏭</div>
                     <h5 className="text-cyan-400 font-bold text-sm mb-1">Factories</h5>
-                    <p className="text-xs text-slate-400">Powers shipyards. Max 5 per planet.</p>
+                    <p className="text-xs text-slate-400">Powers shipyards and provides global ship buffs. Max 5 per planet.</p>
                   </div>
                 </div>
               )}
@@ -202,7 +223,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                 <div className="space-y-2">
                    <div className="flex gap-3">
                      <span className="text-xl">🚢</span>
-                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Transport:</span> Freighters move 2 people. Colonizing is the fastest way to expand.</p>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Transport:</span> Freighters move 2 people. Advanced Warships can carry up to 4 people.</p>
                    </div>
                    <div className="flex gap-3">
                      <span className="text-xl">💣</span>
@@ -210,7 +231,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                    </div>
                    <div className="flex gap-3">
                      <span className="text-xl">🏭</span>
-                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Industry:</span> Build up to 10 Mines and 5 Factories. You need factories to build new ships.</p>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Industry:</span> Each Factory provides a <span className="text-white font-bold">1% global ship buff</span>. High factory counts unlock unique hull capabilities.</p>
                    </div>
                 </div>
               </div>

@@ -44,6 +44,21 @@ export const SHIP_COSTS = {
   WARSHIP: SHIP_STATS.WARSHIP.cost 
 };
 
+// New mechanic: Factories make ships 1% stronger and 1% cheaper
+export const getEmpireBonuses = (planets: Planet[], owner: Owner) => {
+  const factoryCount = planets
+    .filter(p => p.owner === owner)
+    .reduce((sum, p) => sum + p.factories, 0);
+  
+  return {
+    discount: Math.min(0.75, factoryCount * 0.01), // Cap discount at 75% for balance
+    strength: 1 + (factoryCount * 0.01),
+    scoutBonus: factoryCount >= 15 ? 0.05 : 0, // Extra 5% sabotage
+    warshipCapacity: factoryCount >= 30 ? 4 : (factoryCount >= 25 ? 2 : (factoryCount >= 20 ? 1 : 0)),
+    factoryCount
+  };
+};
+
 const seededRandom = (a: number) => {
   return function() {
     let t = a += 0x6D2B79F5;

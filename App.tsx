@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameState, Owner, AiDifficulty, Planet, Ship, ShipType } from './types';
-import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE } from './gameLogic';
+import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE, getEmpireBonuses } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import NewGameModal from './components/NewGameModal';
@@ -90,9 +90,17 @@ const App: React.FC = () => {
         nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
       } else if (type === 'BUILD_SHIP' && selected && 'population' in selected) {
          const shipType = payload.type as ShipType;
-         const stats = SHIP_STATS[shipType];
-         if (nextState.playerCredits[playerRole] < stats.cost) return prev;
-         nextState.playerCredits[playerRole] -= stats.cost;
+         const baseStats = SHIP_STATS[shipType];
+         const bonuses = getEmpireBonuses(prev.planets, playerRole);
+         const cost = Math.floor(baseStats.cost * (1 - bonuses.discount));
+
+         if (nextState.playerCredits[playerRole] < cost) return prev;
+         nextState.playerCredits[playerRole] -= cost;
+         
+         const boostedHp = Math.floor(baseStats.hp * bonuses.strength);
+         const boostedAtk = Math.floor(baseStats.attack * bonuses.strength);
+         const peopleCapacity = shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people;
+
          const newShip: Ship = {
             id: `s-${playerRole}-${Date.now()}`,
             name: `${prev.playerNames[playerRole]} ${shipType}`,
@@ -102,13 +110,13 @@ const App: React.FC = () => {
             y: selected.y,
             currentPlanetId: selected.id,
             cargo: 0,
-            maxCargo: stats.cargo,
+            maxCargo: baseStats.cargo,
             cargoPeople: 0,
-            maxPeopleCargo: stats.people,
-            hp: stats.hp,
-            maxHp: stats.hp,
-            attack: stats.attack,
-            speed: stats.speed,
+            maxPeopleCargo: peopleCapacity,
+            hp: boostedHp,
+            maxHp: boostedHp,
+            attack: boostedAtk,
+            speed: baseStats.speed,
             status: 'ORBITING'
          };
          nextState.ships = [...prev.ships, newShip];
@@ -157,41 +165,48 @@ const App: React.FC = () => {
       const aiPlayers = gameState.aiPlayers || [];
       aiPlayers.forEach(aiId => {
         const aiPlanets = nextPlanets.filter(p => p.owner === aiId);
+        const bonuses = getEmpireBonuses(nextPlanets, aiId);
         
         // Economic Expansion
         aiPlanets.forEach(p => {
-          // Build Mines (Prioritize income)
-          if (nextCredits[aiId] >= 500 && p.mines < 5) {
+          if (nextCredits[aiId] >= 500 && p.mines < 10) {
             nextCredits[aiId] -= 500;
             p.mines += 1;
           }
-          // Build Factories
-          if (nextCredits[aiId] >= 800 && p.factories < 2) {
+          if (nextCredits[aiId] >= 800 && p.factories < 5) {
             nextCredits[aiId] -= 800;
             p.factories += 1;
           }
-          // Build Ships
-          if (nextCredits[aiId] >= 1500 && p.factories > 0) {
+          if (p.factories > 0) {
             const types: ShipType[] = ['WARSHIP', 'FREIGHTER'];
             const type = types[Math.floor(Math.random() * types.length)];
-            const stats = SHIP_STATS[type];
-            nextCredits[aiId] -= stats.cost;
-            nextShips.push({
-              id: `s-${aiId}-${Date.now()}-${Math.random()}`,
-              name: `AI ${type}`,
-              type, owner: aiId, x: p.x, y: p.y,
-              currentPlanetId: p.id, status: 'ORBITING',
-              cargo: 0, maxCargo: stats.cargo, cargoPeople: 0, maxPeopleCargo: stats.people,
-              hp: stats.hp, maxHp: stats.hp, attack: stats.attack, speed: stats.speed
-            });
+            const baseStats = SHIP_STATS[type];
+            const cost = Math.floor(baseStats.cost * (1 - bonuses.discount));
+
+            if (nextCredits[aiId] >= Math.max(1500, cost)) {
+              nextCredits[aiId] -= cost;
+              const boostedHp = Math.floor(baseStats.hp * bonuses.strength);
+              const boostedAtk = Math.floor(baseStats.attack * bonuses.strength);
+              const peopleCapacity = type === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people;
+
+              nextShips.push({
+                id: `s-${aiId}-${Date.now()}-${Math.random()}`,
+                name: `AI ${type}`,
+                type, owner: aiId, x: p.x, y: p.y,
+                currentPlanetId: p.id, status: 'ORBITING',
+                cargo: 0, maxCargo: baseStats.cargo, 
+                cargoPeople: type === 'FREIGHTER' ? 1 : 0, 
+                maxPeopleCargo: peopleCapacity,
+                hp: boostedHp, maxHp: boostedHp, attack: boostedAtk, speed: baseStats.speed
+              });
+            }
           }
         });
 
         // Strategic Movement
         nextShips.filter(s => s.owner === aiId && s.status !== 'MOVING').forEach(s => {
           let target: Planet | undefined;
-          if (s.type === 'FREIGHTER') {
-            // Find closest neutral planet
+          if (s.type === 'FREIGHTER' || (s.type === 'WARSHIP' && s.maxPeopleCargo > 0)) {
             const neutrals = nextPlanets.filter(p => p.owner === 'NEUTRAL');
             target = neutrals.sort((a, b) => {
               const dA = Math.sqrt((s.x - a.x)**2 + (s.y - a.y)**2);
@@ -199,7 +214,6 @@ const App: React.FC = () => {
               return dA - dB;
             })[0];
           } else if (s.type === 'WARSHIP') {
-            // Find closest enemy planet
             const enemies = nextPlanets.filter(p => p.owner !== aiId && p.owner !== 'NEUTRAL');
             target = enemies.sort((a, b) => {
               const dA = Math.sqrt((s.x - a.x)**2 + (s.y - a.y)**2);
@@ -207,7 +221,6 @@ const App: React.FC = () => {
               return dA - dB;
             })[0];
           } else if (s.type === 'SCOUT') {
-            // Explore
             const nonOwned = nextPlanets.filter(p => p.owner !== aiId);
             target = nonOwned[Math.floor(Math.random() * nonOwned.length)];
           }
@@ -238,8 +251,10 @@ const App: React.FC = () => {
       });
 
       nextPlanets = nextPlanets.map(p => {
+        // Colonization Check: Any ship with maxPeopleCargo > 0 can colonize if they are at the planet
+        // For simplicity, we assume freighters always carry people, and warships carry if they have capacity
         if (p.owner === 'NEUTRAL') {
-           const colonist = nextShips.find(s => s.currentPlanetId === p.id && s.type === 'FREIGHTER');
+           const colonist = nextShips.find(s => s.currentPlanetId === p.id && (s.type === 'FREIGHTER' || s.maxPeopleCargo > 0));
            if (colonist) return { ...p, owner: colonist.owner, population: 1 };
            return p;
         }
@@ -254,7 +269,15 @@ const App: React.FC = () => {
            nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2); 
         }
 
-        const mineModifier = spies.length > 0 ? 0.75 : 1.0;
+        // Calculate Sabotage modifier based on orbiting spies
+        let maxSabotage = 0;
+        spies.forEach(spy => {
+           const spyBonuses = getEmpireBonuses(nextPlanets, spy.owner);
+           const currentSabotage = 0.25 + spyBonuses.scoutBonus;
+           if (currentSabotage > maxSabotage) maxSabotage = currentSabotage;
+        });
+
+        const mineModifier = 1.0 - maxSabotage;
         const income = (p.mines * 50 * mineModifier) + (p.factories * 20) + (Math.floor(nextPop) * 50);
         nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
 
@@ -394,6 +417,7 @@ const App: React.FC = () => {
           isSettingCourse={isSettingCourse}
           isSpied={isSpiedByMe}
           ships={gameState.ships}
+          planets={gameState.planets}
         />
       </main>
 
