@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Planet, Ship } from '../types';
 import { GRID_SIZE, PLAYER_COLORS, MAX_FACTORIES } from '../gameLogic';
 
@@ -25,6 +25,35 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
       y: window.innerHeight / 2 - (GRID_SIZE / 2) * zoom 
     });
   }, []);
+
+  // Calculate display positions for ships so they don't stack
+  const shipDisplayPositions = useMemo(() => {
+    const posMap: Record<string, { x: number, y: number }> = {};
+    const planetOrbitCounters: Record<string, number> = {};
+
+    ships.forEach(s => {
+      if (s.currentPlanetId && s.status === 'ORBITING') {
+        const planet = planets.find(p => p.id === s.currentPlanetId);
+        if (planet) {
+          const count = planetOrbitCounters[s.currentPlanetId] || 0;
+          const orbitRadius = 55; // Distance from planet center
+          // Distribute ships in 45-degree increments
+          const angle = (count * 45) * (Math.PI / 180); 
+          posMap[s.id] = {
+            x: planet.x + Math.cos(angle) * orbitRadius,
+            y: planet.y + Math.sin(angle) * orbitRadius
+          };
+          planetOrbitCounters[s.currentPlanetId] = count + 1;
+        } else {
+          posMap[s.id] = { x: s.x, y: s.y };
+        }
+      } else {
+        // Moving ships use their actual coordinate
+        posMap[s.id] = { x: s.x, y: s.y };
+      }
+    });
+    return posMap;
+  }, [ships, planets]);
 
   const handleStart = (x: number, y: number) => {
     isDragging.current = true;
@@ -114,24 +143,27 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           </div>
         ))}
 
-        {ships.map(s => (
-          <div 
-            key={s.id}
-            onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(s.id); }}
-            className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group p-4`}
-            style={{ left: s.x, top: s.y, transition: 'all 2s ease-in-out' }}
-          >
-            {selectedId === s.id && (
-              <div className="absolute inset-0 border border-white/30 rounded-full animate-[spin_4s_linear_infinite]" />
-            )}
-            <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 shadow-xl transition-all ${selectedId === s.id ? 'scale-125 ring-4 ring-white/20' : 'hover:scale-110'}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
-              <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
+        {ships.map(s => {
+          const pos = shipDisplayPositions[s.id] || { x: s.x, y: s.y };
+          return (
+            <div 
+              key={s.id}
+              onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(s.id); }}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group p-4 z-10`}
+              style={{ left: pos.x, top: pos.y, transition: 'all 2s ease-in-out' }}
+            >
+              {selectedId === s.id && (
+                <div className="absolute inset-0 border border-white/30 rounded-full animate-[spin_4s_linear_infinite]" />
+              )}
+              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 shadow-xl transition-all ${selectedId === s.id ? 'scale-125 ring-4 ring-white/20' : 'hover:scale-110'}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+                <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
+              </div>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-black/80 px-2 py-0.5 rounded border border-white/5 opacity-0 group-hover:opacity-100 whitespace-nowrap z-50">
+                 <p className="text-[8px] font-black text-white uppercase">{s.name}</p>
+              </div>
             </div>
-            <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-black/80 px-2 py-0.5 rounded border border-white/5 opacity-0 group-hover:opacity-100 whitespace-nowrap z-50">
-               <p className="text-[8px] font-black text-white uppercase">{s.name}</p>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="absolute bottom-10 left-10 flex flex-col gap-2">
