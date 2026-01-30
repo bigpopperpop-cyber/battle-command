@@ -28,7 +28,7 @@ export const PLAYER_COLORS: Record<Owner, string> = {
 };
 
 export const SHIP_STATS = {
-  SCOUT: { speed: 180, hp: 60, attack: 5, cargo: 20, people: 0, cost: 200 },
+  SCOUT: { speed: 180, hp: 60, attack: 0, cargo: 20, people: 0, cost: 200 },
   FREIGHTER: { speed: 60, hp: 180, attack: 2, cargo: 1000, people: 2, cost: 400 },
   WARSHIP: { speed: 80, hp: 450, attack: 50, cargo: 80, people: 0, cost: 950 }
 };

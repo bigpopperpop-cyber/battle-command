@@ -148,15 +148,22 @@ const App: React.FC = () => {
            if (colonist) return { ...p, owner: colonist.owner, population: 1 };
            return p;
         }
+
         const invaders = nextShips.filter(s => s.currentPlanetId === p.id && s.owner !== p.owner && s.type === 'WARSHIP');
+        const spies = nextShips.filter(s => s.currentPlanetId === p.id && s.owner !== p.owner && s.type === 'SCOUT' && s.status === 'ORBITING');
+
         let nextPop = p.population;
         if (invaders.length > 0) {
            nextPop = Math.max(0, p.population - invaders.length);
         } else {
            nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2); 
         }
-        const income = (p.mines * 50) + (p.factories * 20) + (Math.floor(nextPop) * 50);
+
+        // Spy Sabotage: Mines produce at 75% if a scout is spying
+        const mineModifier = spies.length > 0 ? 0.75 : 1.0;
+        const income = (p.mines * 50 * mineModifier) + (p.factories * 20) + (Math.floor(nextPop) * 50);
         nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
+
         return { 
           ...p, 
           population: nextPop, 
@@ -184,6 +191,12 @@ const App: React.FC = () => {
   const selectedObject = useMemo(() => {
     return gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null;
   }, [selectedId, gameState]);
+
+  // Check if current player is spying on the selected planet
+  const isSpiedByMe = useMemo(() => {
+    if (!selectedId || !selectedObject || !('population' in selectedObject)) return false;
+    return gameState.ships.some(s => s.owner === playerRole && s.type === 'SCOUT' && s.currentPlanetId === selectedId && s.status === 'ORBITING');
+  }, [selectedId, selectedObject, gameState.ships, playerRole]);
 
   if (!hasStarted) {
     return (
@@ -269,6 +282,8 @@ const App: React.FC = () => {
           credits={gameState.playerCredits[playerRole || 'P1'] || 0}
           onIssueOrder={handleIssueOrder}
           isSettingCourse={isSettingCourse}
+          isSpied={isSpiedByMe}
+          ships={gameState.ships}
         />
       </main>
 
