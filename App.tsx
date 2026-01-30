@@ -77,7 +77,9 @@ const App: React.FC = () => {
     }
 
     setGameState(prev => {
-      const nextState = { ...prev };
+      // If already ready, un-ready them if they make a change
+      const readyPlayers = (prev.readyPlayers || []).filter(p => p !== playerRole);
+      const nextState = { ...prev, readyPlayers };
       const selected = prev.planets.find(p => p.id === selectedId) || prev.ships.find(s => s.id === selectedId);
       
       if (type === 'BUILD_MINE' && selected && 'population' in selected) {
@@ -122,7 +124,23 @@ const App: React.FC = () => {
          nextState.ships = [...prev.ships, newShip];
       }
 
-      if (db && gameId && viewMode === 'HOST' && !isConfigPlaceholder) {
+      if (db && gameId && !isConfigPlaceholder) {
+        set(ref(db, `games/${gameId}/state`), nextState);
+      }
+      return nextState;
+    });
+  };
+
+  const handleReadyToggle = () => {
+    if (!playerRole) return;
+    setGameState(prev => {
+      const isReady = (prev.readyPlayers || []).includes(playerRole);
+      const readyPlayers = isReady 
+        ? (prev.readyPlayers || []).filter(p => p !== playerRole)
+        : [...(prev.readyPlayers || []), playerRole];
+      
+      const nextState = { ...prev, readyPlayers };
+      if (db && gameId && !isConfigPlaceholder) {
         set(ref(db, `games/${gameId}/state`), nextState);
       }
       return nextState;
@@ -135,11 +153,13 @@ const App: React.FC = () => {
       const target = gameState.planets.find(p => p.id === id);
       if (ship && target) {
         setGameState(prev => {
+          const readyPlayers = (prev.readyPlayers || []).filter(p => p !== playerRole);
           const newState = {
             ...prev,
+            readyPlayers,
             ships: prev.ships.map(s => s.id === selectedId ? { ...s, targetPlanetId: id, status: 'MOVING' } : s)
           };
-          if (db && gameId && viewMode === 'HOST' && !isConfigPlaceholder) {
+          if (db && gameId && !isConfigPlaceholder) {
              set(ref(db, `games/${gameId}/state`), newState);
           }
           return newState;
@@ -153,8 +173,26 @@ const App: React.FC = () => {
     setSelectedId(id);
   };
 
+  const humanPlayers = useMemo(() => {
+    const humans: Owner[] = [];
+    for (let i = 1; i <= gameState.playerCount; i++) {
+      const p = `P${i}` as Owner;
+      if (!gameState.aiPlayers.includes(p)) {
+        humans.push(p);
+      }
+    }
+    return humans;
+  }, [gameState.playerCount, gameState.aiPlayers]);
+
+  const allPlayersReady = useMemo(() => {
+    // If we're offline or just one human, we don't strictly wait for 'ready' state to enable host execute
+    // but the prompt says "the host can execute the turn UNTIL all players submit there turn"
+    // (Assuming they meant "CAN'T" or that they need to wait)
+    return humanPlayers.every(p => (gameState.readyPlayers || []).includes(p));
+  }, [humanPlayers, gameState.readyPlayers]);
+
   const executeTurn = async () => {
-    if (isProcessing) return;
+    if (isProcessing || !allPlayersReady) return;
     setIsProcessing(true);
     try {
       let nextPlanets = gameState.planets.map(p => ({...p}));
@@ -167,7 +205,6 @@ const App: React.FC = () => {
         const aiPlanets = nextPlanets.filter(p => p.owner === aiId);
         const bonuses = getEmpireBonuses(nextPlanets, aiId);
         
-        // Economic Expansion
         aiPlanets.forEach(p => {
           if (nextCredits[aiId] >= 500 && p.mines < 10) {
             nextCredits[aiId] -= 500;
@@ -203,7 +240,6 @@ const App: React.FC = () => {
           }
         });
 
-        // Strategic Movement
         nextShips.filter(s => s.owner === aiId && s.status !== 'MOVING').forEach(s => {
           let target: Planet | undefined;
           if (s.type === 'FREIGHTER' || (s.type === 'WARSHIP' && s.maxPeopleCargo > 0)) {
@@ -251,8 +287,6 @@ const App: React.FC = () => {
       });
 
       nextPlanets = nextPlanets.map(p => {
-        // Colonization Check: Any ship with maxPeopleCargo > 0 can colonize if they are at the planet
-        // For simplicity, we assume freighters always carry people, and warships carry if they have capacity
         if (p.owner === 'NEUTRAL') {
            const colonist = nextShips.find(s => s.currentPlanetId === p.id && (s.type === 'FREIGHTER' || s.maxPeopleCargo > 0));
            if (colonist) return { ...p, owner: colonist.owner, population: 1 };
@@ -269,7 +303,6 @@ const App: React.FC = () => {
            nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2); 
         }
 
-        // Calculate Sabotage modifier based on orbiting spies
         let maxSabotage = 0;
         spies.forEach(spy => {
            const spyBonuses = getEmpireBonuses(nextPlanets, spy.owner);
@@ -294,7 +327,7 @@ const App: React.FC = () => {
         planets: nextPlanets,
         ships: nextShips,
         playerCredits: nextCredits,
-        readyPlayers: []
+        readyPlayers: [] // Reset ready state for next turn
       };
 
       if (db && gameId && !isConfigPlaceholder) {
@@ -336,6 +369,8 @@ const App: React.FC = () => {
     }
   };
 
+  const isSelfReady = (gameState.readyPlayers || []).includes(playerRole || 'P1');
+
   if (!hasStarted) {
     return (
       <div className="fixed inset-0 flex flex-col items-center justify-center p-6 z-[500] star-bg safe-pt safe-pb">
@@ -369,21 +404,44 @@ const App: React.FC = () => {
             </span>
             <span className="text-[8px] md:text-[9px] font-bold text-slate-500 uppercase">RND {gameState.round}</span>
           </div>
+          
+          <div className="hidden lg:flex items-center gap-1 ml-4 bg-black/20 px-3 py-1 rounded-full border border-white/5">
+             {humanPlayers.map(p => (
+               <div key={p} className="flex items-center gap-1">
+                 <div className="w-2 h-2 rounded-full" style={{ backgroundColor: PLAYER_COLORS[p] }} />
+                 <span className={`text-[8px] font-black uppercase tracking-tighter ${(gameState.readyPlayers || []).includes(p) ? 'text-emerald-400' : 'text-slate-600'}`}>
+                   {(gameState.readyPlayers || []).includes(p) ? 'READY' : 'WAITING'}
+                 </span>
+                 <span className="mx-1 text-slate-800 text-[8px]">/</span>
+               </div>
+             ))}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 md:gap-4 flex-1 justify-end">
-          {viewMode === 'HOST' && (
+          {viewMode === 'HOST' ? (
             <button 
               onClick={executeTurn} 
-              disabled={isProcessing} 
-              className={`px-4 md:px-6 py-2.5 rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-30 border-b-2 flex items-center gap-2 ${isProcessing ? 'bg-slate-800 border-slate-900 text-slate-500' : 'bg-emerald-600 border-emerald-800 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'}`}
+              disabled={isProcessing || !allPlayersReady} 
+              className={`px-4 md:px-6 py-2.5 rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-30 border-b-2 flex items-center gap-2 ${!allPlayersReady ? 'bg-slate-800 border-slate-900 text-slate-500' : isProcessing ? 'bg-slate-800 border-slate-900 text-slate-500' : 'bg-emerald-600 border-emerald-800 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'}`}
             >
               {isProcessing ? (
                 <div className="w-3 h-3 border-2 border-slate-500/20 border-t-slate-500 rounded-full animate-spin" />
+              ) : !allPlayersReady ? (
+                <span>⏳ WAITING ({gameState.readyPlayers?.length || 0}/{humanPlayers.length})</span>
               ) : (
-                <span className="hidden md:inline">📡</span>
+                <>
+                  <span className="hidden md:inline">📡</span>
+                  <span>EXECUTE</span>
+                </>
               )}
-              {isProcessing ? 'SYNCING' : 'EXECUTE'}
+            </button>
+          ) : (
+            <button 
+              onClick={handleReadyToggle}
+              className={`px-4 md:px-6 py-2.5 rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border-b-2 flex items-center gap-2 ${isSelfReady ? 'bg-emerald-600/20 border-emerald-500 text-emerald-400' : 'bg-cyan-600 border-cyan-800 hover:bg-cyan-500 text-white shadow-lg shadow-cyan-900/20'}`}
+            >
+              {isSelfReady ? '✓ SUBMITTED' : '🚀 SUBMIT ORDERS'}
             </button>
           )}
 
