@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameState, Owner, AiDifficulty, Planet, Ship, ShipType } from './types';
-import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS } from './gameLogic';
+import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import NewGameModal from './components/NewGameModal';
@@ -42,24 +42,22 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingCourse, setIsSettingCourse] = useState(false);
 
-  // Deep Link Detection: Check URL for gameId and role on mount
+  // Deep Link Detection
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlGameId = params.get('gameId');
     const urlRole = params.get('role') as Owner | null;
 
     if (urlGameId && urlRole) {
-      console.log(`Auto-Join protocol initiated for Sector ${urlGameId} as ${urlRole}`);
       setGameId(urlGameId);
       setPlayerRole(urlRole);
       setViewMode('PLAYER');
       setHasStarted(true);
-      // Clean URL without refreshing
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
 
-  // Sync state from Firebase when gameId is set
+  // Sync state from Firebase
   useEffect(() => {
     if (!db || !gameId || isConfigPlaceholder) return;
     const stateRef = ref(db, `games/${gameId}/state`);
@@ -116,12 +114,9 @@ const App: React.FC = () => {
          nextState.ships = [...prev.ships, newShip];
       }
 
-      // If we are in a multiplayer game, Host's local changes should sync to Firebase immediately
-      // This is optional for turn-based but helpful for showing 'intent'
       if (db && gameId && viewMode === 'HOST' && !isConfigPlaceholder) {
         set(ref(db, `games/${gameId}/state`), nextState);
       }
-
       return nextState;
     });
   };
@@ -158,6 +153,73 @@ const App: React.FC = () => {
       let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
+      // --- 1. AI Decision Layer ---
+      const aiPlayers = gameState.aiPlayers || [];
+      aiPlayers.forEach(aiId => {
+        const aiPlanets = nextPlanets.filter(p => p.owner === aiId);
+        
+        // Economic Expansion
+        aiPlanets.forEach(p => {
+          // Build Mines (Prioritize income)
+          if (nextCredits[aiId] >= 500 && p.mines < 5) {
+            nextCredits[aiId] -= 500;
+            p.mines += 1;
+          }
+          // Build Factories
+          if (nextCredits[aiId] >= 800 && p.factories < 2) {
+            nextCredits[aiId] -= 800;
+            p.factories += 1;
+          }
+          // Build Ships
+          if (nextCredits[aiId] >= 1500 && p.factories > 0) {
+            const types: ShipType[] = ['WARSHIP', 'FREIGHTER'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const stats = SHIP_STATS[type];
+            nextCredits[aiId] -= stats.cost;
+            nextShips.push({
+              id: `s-${aiId}-${Date.now()}-${Math.random()}`,
+              name: `AI ${type}`,
+              type, owner: aiId, x: p.x, y: p.y,
+              currentPlanetId: p.id, status: 'ORBITING',
+              cargo: 0, maxCargo: stats.cargo, cargoPeople: 0, maxPeopleCargo: stats.people,
+              hp: stats.hp, maxHp: stats.hp, attack: stats.attack, speed: stats.speed
+            });
+          }
+        });
+
+        // Strategic Movement
+        nextShips.filter(s => s.owner === aiId && s.status !== 'MOVING').forEach(s => {
+          let target: Planet | undefined;
+          if (s.type === 'FREIGHTER') {
+            // Find closest neutral planet
+            const neutrals = nextPlanets.filter(p => p.owner === 'NEUTRAL');
+            target = neutrals.sort((a, b) => {
+              const dA = Math.sqrt((s.x - a.x)**2 + (s.y - a.y)**2);
+              const dB = Math.sqrt((s.x - b.x)**2 + (s.y - b.y)**2);
+              return dA - dB;
+            })[0];
+          } else if (s.type === 'WARSHIP') {
+            // Find closest enemy planet
+            const enemies = nextPlanets.filter(p => p.owner !== aiId && p.owner !== 'NEUTRAL');
+            target = enemies.sort((a, b) => {
+              const dA = Math.sqrt((s.x - a.x)**2 + (s.y - a.y)**2);
+              const dB = Math.sqrt((s.x - b.x)**2 + (s.y - b.y)**2);
+              return dA - dB;
+            })[0];
+          } else if (s.type === 'SCOUT') {
+            // Explore
+            const nonOwned = nextPlanets.filter(p => p.owner !== aiId);
+            target = nonOwned[Math.floor(Math.random() * nonOwned.length)];
+          }
+
+          if (target && target.id !== s.currentPlanetId) {
+            s.targetPlanetId = target.id;
+            s.status = 'MOVING';
+          }
+        });
+      });
+
+      // --- 2. Resolution Layer ---
       nextShips = nextShips.map(ship => {
         if (ship.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
@@ -239,7 +301,6 @@ const App: React.FC = () => {
     setGameState(initialState);
     setHasStarted(true);
 
-    // Immediate Broadcast to Relay
     if (db && !isConfigPlaceholder) {
       try {
         await set(ref(db, `games/${id}/state`), initialState);
@@ -248,10 +309,7 @@ const App: React.FC = () => {
           round: 1,
           playerCount
         });
-        console.log(`Relay broadcast successful for Sector ${id}`);
-      } catch (e) {
-        console.error("Broadcasting failed", e);
-      }
+      } catch (e) { console.error(e); }
     }
   };
 
@@ -270,19 +328,10 @@ const App: React.FC = () => {
             </button>
           </div>
         </div>
-        <NewGameModal 
-          isOpen={isNewGameOpen} 
-          onClose={() => setIsNewGameOpen(false)} 
-          onConfirm={handleStartNewGame} 
-        />
-        <LobbyModal 
-          isOpen={isLobbyOpen} 
-          onClose={() => setIsLobbyOpen(false)} 
-          db={db} 
-          onJoin={(id, role) => {
+        <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={handleStartNewGame} />
+        <LobbyModal isOpen={isLobbyOpen} onClose={() => setIsLobbyOpen(false)} db={db} onJoin={(id, role) => {
             setGameId(id); setPlayerRole(role); setViewMode('PLAYER'); setHasStarted(true);
-          }} 
-        />
+        }} />
       </div>
     );
   }
@@ -349,19 +398,8 @@ const App: React.FC = () => {
       </main>
 
       <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
-      <HelpModal 
-        isOpen={isHelpOpen} 
-        onClose={() => setIsHelpOpen(false)} 
-        onOpenInvite={() => setIsInviteOpen(true)}
-        gameState={gameState} 
-        playerRole={playerRole} 
-      />
-      <InviteModal 
-        isOpen={isInviteOpen} 
-        onClose={() => setIsInviteOpen(false)} 
-        frequency={gameId || 'OFFLINE'} 
-        gameState={gameState} 
-      />
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} onOpenInvite={() => setIsInviteOpen(true)} gameState={gameState} playerRole={playerRole} />
+      <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} frequency={gameId || 'OFFLINE'} gameState={gameState} />
     </div>
   );
 };
