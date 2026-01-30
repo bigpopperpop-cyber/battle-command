@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GameState, Owner } from './types';
+import { GameState } from './types';
 import { generateInitialState } from './gameLogic';
 import MapView from './components/MapView';
 import NewGameModal from './components/NewGameModal';
@@ -21,7 +21,7 @@ try {
         ? initializeApp(firebaseConfig) 
         : getApp();
         
-    // FIXED: Using 'firebaseApp' consistently to avoid "Service database not available"
+    // FIXED: Correctly linking the app to the database
     db = getDatabase(firebaseApp);
     console.log("Stellar Command Relay Link Established.");
 } catch (e) {
@@ -34,7 +34,6 @@ const App: React.FC = () => {
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
 
-  // Real-time State Synchronization
   useEffect(() => {
     if (!db || !gameId) return;
     const stateRef = ref(db, `games/${gameId}/state`);
@@ -62,7 +61,6 @@ const App: React.FC = () => {
              <div className="bg-slate-900 border border-red-900/50 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center">
                 <div className="text-red-500 font-bold mb-4 tracking-widest text-sm uppercase italic">Relay Offline: Check App.tsx</div>
                 <button className="w-full bg-slate-800 text-slate-500 py-3 rounded-lg font-bold uppercase tracking-widest text-xs cursor-not-allowed">Initialize New Galaxy</button>
-                <div className="mt-4 text-[9px] text-slate-600">Error: Service Database Not Available</div>
              </div>
           </div>
         ) : (
