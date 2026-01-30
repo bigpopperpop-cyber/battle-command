@@ -12,18 +12,17 @@ import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, onDisconnect, get, Database } from 'firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
-const firebaseConfig = {
-  // Use your real URL for cloud play. 
-  // 'default-rtdb' triggers local demo mode to allow app exploration without credentials.
-  databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
-};
-
+15  const firebaseConfig = {
+16    databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
+17  };
+18
+19  const databaseURL = "https://stellar-commander-default-rtdb.firebaseio.com";
 let db: Database | null = null;
 const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
-  const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  db = getDatabase(app);
+    const firebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
+    db = getDatabase(firebaseApp);
 } catch (e) {
   console.error("Relay Initialization Failed:", e);
 }
