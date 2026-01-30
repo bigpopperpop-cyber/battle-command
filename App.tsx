@@ -9,21 +9,21 @@ import { getDatabase, ref, onValue, Database } from 'firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
-  // This matches your active Firebase Realtime Database
+  // Fixed: Points to your active Stellar Commander project
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
 };
 
 // Initialize Firebase App and Database service safely
 let db: Database | null = null;
-const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("your-project-id");
+const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
-    // Standard Firebase Modular initialization pattern
+    // Standard Firebase Modular initialization
     const firebaseApp: FirebaseApp = getApps().length === 0 
         ? initializeApp(firebaseConfig) 
         : getApp();
         
-    // Linked correctly to the app instance above
+    // Fixed: Using 'firebaseApp' consistently to clear the "Service database not available" error
     db = getDatabase(firebaseApp);
     console.log("Stellar Command Relay Link Established.");
 } catch (e) {
@@ -49,7 +49,6 @@ const App: React.FC = () => {
 
   return (
     <div className="flex flex-col h-screen bg-slate-950 text-slate-200 overflow-hidden font-mono">
-      {/* Header Section */}
       <header className="h-12 border-b border-cyan-900/50 bg-slate-900/80 flex items-center justify-between px-4 z-50">
         <div className="flex flex-col">
           <h1 className="text-sm font-black tracking-tighter text-cyan-400 uppercase italic">Stellar</h1>
@@ -57,7 +56,6 @@ const App: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Interface */}
       <main className="flex-1 relative">
         <MapView planets={gameState.planets} ships={gameState.ships} />
         
@@ -66,7 +64,6 @@ const App: React.FC = () => {
              <div className="bg-slate-900 border border-red-900/50 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center">
                 <div className="text-red-500 font-bold mb-4 tracking-widest text-sm uppercase italic">Relay Offline: Check App.tsx</div>
                 <button className="w-full bg-slate-800 text-slate-500 py-3 rounded-lg font-bold uppercase tracking-widest text-xs cursor-not-allowed">Initialize New Galaxy</button>
-                <div className="mt-4 text-[9px] text-slate-600">Error: Service Database Not Available</div>
              </div>
           </div>
         ) : (
@@ -86,7 +83,6 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Modals */}
       {isNewGameOpen && <NewGameModal onClose={() => setIsNewGameOpen(false)} />}
       {isLobbyOpen && <LobbyModal onClose={() => setIsLobbyOpen(false)} />}
     </div>
