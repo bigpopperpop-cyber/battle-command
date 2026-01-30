@@ -16,8 +16,7 @@ import { getDatabase, ref, onValue, set, update, onDisconnect, get, Database } f
 16    databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
 17  };
 18
-19  const databaseURL = "https://stellar-commander-default-rtdb.firebaseio.com";
-let db: Database | null = null;
+19  const databaseURL = "https://stellar-commander-default-rtdb.firebaseio.com";let db: Database | null = null;
 const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
