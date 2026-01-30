@@ -9,7 +9,6 @@ import { getDatabase, ref, onValue, Database } from 'firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
-  // Fixed: Points to your active Stellar Commander project
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
 };
 
@@ -18,12 +17,11 @@ let db: Database | null = null;
 const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
 
 try {
-    // Standard Firebase Modular initialization
     const firebaseApp: FirebaseApp = getApps().length === 0 
         ? initializeApp(firebaseConfig) 
         : getApp();
         
-    // Fixed: Using 'firebaseApp' consistently to clear the "Service database not available" error
+    // FIXED: Using 'firebaseApp' consistently to avoid "Service database not available"
     db = getDatabase(firebaseApp);
     console.log("Stellar Command Relay Link Established.");
 } catch (e) {
@@ -36,7 +34,7 @@ const App: React.FC = () => {
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
 
-  // Real-time State Synchronization logic
+  // Real-time State Synchronization
   useEffect(() => {
     if (!db || !gameId) return;
     const stateRef = ref(db, `games/${gameId}/state`);
@@ -64,6 +62,7 @@ const App: React.FC = () => {
              <div className="bg-slate-900 border border-red-900/50 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center">
                 <div className="text-red-500 font-bold mb-4 tracking-widest text-sm uppercase italic">Relay Offline: Check App.tsx</div>
                 <button className="w-full bg-slate-800 text-slate-500 py-3 rounded-lg font-bold uppercase tracking-widest text-xs cursor-not-allowed">Initialize New Galaxy</button>
+                <div className="mt-4 text-[9px] text-slate-600">Error: Service Database Not Available</div>
              </div>
           </div>
         ) : (
