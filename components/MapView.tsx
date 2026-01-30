@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { Planet, Ship } from '../types';
-import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
+import { GRID_SIZE, PLAYER_COLORS, MAX_FACTORIES } from '../gameLogic';
 
 interface MapViewProps {
   planets: Planet[];
@@ -89,6 +89,11 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
             className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto"
             style={{ left: p.x, top: p.y }}
           >
+            {/* Max Factories Defensive Shield Visual */}
+            {p.factories >= MAX_FACTORIES && (
+              <div className="absolute inset-0 w-20 h-20 -translate-x-3 -translate-y-3 rounded-full border-2 border-cyan-400/40 animate-[pulse_3s_infinite] shadow-[inset_0_0_15px_rgba(34,211,238,0.2)]" />
+            )}
+            
             {isSettingCourse && (
               <div className="absolute inset-0 w-24 h-24 -translate-x-1/4 -translate-y-1/4 rounded-full bg-amber-500/10 animate-ping pointer-events-none" />
             )}

@@ -27,7 +27,7 @@ export interface Ship {
   y: number;
   targetPlanetId?: string;
   currentPlanetId?: string;
-  // Added missing properties to support cargo and combat mechanics
+  fleetId?: string; // Grouping ID for fleets
   cargo: number;
   maxCargo: number;
   cargoPeople: number;
@@ -51,7 +51,6 @@ export interface GameState {
   aiDifficulty: AiDifficulty;
   activePlayer: Owner;
   readyPlayers: Owner[]; 
-  // Added missing properties for game logs and host identification
   logs: string[];
   isHost?: boolean;
 }

@@ -30,7 +30,7 @@ export const PLAYER_COLORS: Record<Owner, string> = {
 export const SHIP_STATS = {
   SCOUT: { speed: 180, hp: 60, attack: 0, cargo: 20, people: 0, cost: 200 },
   FREIGHTER: { speed: 60, hp: 180, attack: 2, cargo: 1000, people: 2, cost: 400 },
-  WARSHIP: { speed: 80, hp: 450, attack: 50, cargo: 80, people: 0, cost: 950 }
+  WARSHIP: { speed: 80, hp: 450, attack: 25, cargo: 80, people: 0, cost: 950 }
 };
 
 export const SHIP_SPEEDS = { 
@@ -53,6 +53,7 @@ export const getEmpireBonuses = (planets: Planet[], owner: Owner) => {
   return {
     discount: Math.min(0.75, factoryCount * 0.01), // Cap discount at 75% for balance
     strength: 1 + (factoryCount * 0.01),
+    firepowerBonus: factoryCount * 0.5, // +0.5 damage per factory
     scoutBonus: factoryCount >= 15 ? 0.05 : 0, // Extra 5% sabotage
     warshipCapacity: factoryCount >= 30 ? 4 : (factoryCount >= 25 ? 2 : (factoryCount >= 20 ? 1 : 0)),
     factoryCount

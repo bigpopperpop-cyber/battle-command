@@ -8,7 +8,7 @@ interface SelectionPanelProps {
   onClose: () => void;
   playerRole: Owner | null;
   credits: number;
-  onIssueOrder: (type: 'BUILD_MINE' | 'BUILD_FACTORY' | 'BUILD_SHIP' | 'SET_COURSE', payload?: any) => void;
+  onIssueOrder: (type: any, payload?: any) => void;
   isSettingCourse: boolean;
   isSpied?: boolean;
   ships?: Ship[];
@@ -25,7 +25,6 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
   const pColor = PLAYER_COLORS[selection.owner];
   const canSeeDetails = isMine || isSpied;
 
-  // New mechanic: Calculate discounted costs
   const bonuses = useMemo(() => {
     if (!playerRole || !planets.length) return { discount: 0, strength: 1, factoryCount: 0 };
     return getEmpireBonuses(planets, playerRole);
@@ -35,11 +34,23 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
     return Math.floor(SHIP_STATS[type].cost * (1 - bonuses.discount));
   };
 
-  // Check if I am being spied ON at this planet
+  const myShipsAtPlanet = useMemo(() => {
+    if (!isPlanet) return [];
+    return ships.filter(s => s.currentPlanetId === selection.id && s.owner === playerRole);
+  }, [isPlanet, selection, ships, playerRole]);
+
   const hostilesOrbiting = isPlanet && !isMine && selection.owner !== 'NEUTRAL' ? [] : 
     isPlanet && isMine ? ships.filter(s => s.currentPlanetId === selection.id && s.owner !== playerRole && s.status === 'ORBITING') : [];
   
   const isBeingSpiedOn = hostilesOrbiting.some(s => s.type === 'SCOUT');
+
+  const fleetMembers = useMemo(() => {
+    if (isPlanet || !('fleetId' in selection) || !selection.fleetId) return [];
+    return ships.filter(s => s.fleetId === selection.fleetId);
+  }, [isPlanet, selection, ships]);
+
+  const hasShield = isPlanet && selection.factories >= MAX_FACTORIES;
+  const hasIndustrialBoom = isPlanet && selection.factories >= MAX_FACTORIES && selection.mines >= MAX_MINES;
 
   return (
     <div className="fixed inset-x-4 bottom-4 landscape:inset-x-auto landscape:right-4 landscape:top-20 landscape:bottom-4 landscape:w-80 glass-card rounded-[2rem] border-white/10 shadow-2xl z-[80] flex flex-col overflow-hidden animate-in slide-in-from-bottom landscape:slide-in-from-right duration-300 max-h-[45vh] landscape:max-h-none">
@@ -59,6 +70,18 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
       <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
         {isPlanet ? (
           <>
+            {hasShield && (
+              <div className="bg-cyan-500/10 border border-cyan-500/30 p-2 rounded-xl flex items-center gap-2 mb-1">
+                <span className="text-xs">🛡️</span>
+                <span className="text-[8px] font-black text-cyan-400 uppercase tracking-widest leading-none">Galaxy Shield: Active (10% Survival)</span>
+              </div>
+            )}
+            {hasIndustrialBoom && (
+              <div className="bg-emerald-500/10 border border-emerald-500/30 p-2 rounded-xl flex items-center gap-2 mb-2">
+                <span className="text-xs">📈</span>
+                <span className="text-[8px] font-black text-emerald-400 uppercase tracking-widest leading-none">Industrial Boom: +1 Pop / Turn</span>
+              </div>
+            )}
             {isSpied && !isMine && (
               <div className="bg-emerald-500/10 border border-emerald-500/30 p-2 rounded-xl flex items-center gap-2 mb-2">
                 <span className="text-xs">📡</span>
@@ -87,16 +110,23 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
               </div>
             </div>
 
-            {canSeeDetails && (
-              <div className="grid grid-cols-2 gap-2">
-                 <div className="bg-slate-950/40 p-2 rounded-xl border border-white/5 text-center">
-                   <span className="block text-[7px] font-black text-slate-600 uppercase mb-1">Mines</span>
-                   <span className="text-sm font-bold text-amber-500">{selection.mines}</span>
-                 </div>
-                 <div className="bg-slate-950/40 p-2 rounded-xl border border-white/5 text-center">
-                   <span className="block text-[7px] font-black text-slate-600 uppercase mb-1">Factories</span>
-                   <span className="text-sm font-bold text-cyan-500">{selection.factories}</span>
-                 </div>
+            {myShipsAtPlanet.length > 1 && (
+              <div className="p-3 bg-cyan-600/10 border border-cyan-500/30 rounded-2xl space-y-2">
+                <p className="text-[8px] font-black text-cyan-400 uppercase tracking-widest text-center">Fleet Command</p>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => onIssueOrder('FORM_FLEET')}
+                    className="flex-1 py-2 bg-cyan-600 text-white rounded-lg text-[8px] font-black uppercase tracking-widest transition-all"
+                  >
+                    Form Fleet
+                  </button>
+                  <button 
+                    onClick={() => onIssueOrder('DISBAND_FLEET')}
+                    className="flex-1 py-2 bg-slate-800 text-slate-400 rounded-lg text-[8px] font-black uppercase tracking-widest transition-all border border-white/5"
+                  >
+                    Disband
+                  </button>
+                </div>
               </div>
             )}
             
@@ -124,7 +154,7 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
                     <div className="flex justify-between items-center mb-2">
                        <p className="text-[7px] font-black text-slate-600 uppercase">Build Vessel</p>
                        {bonuses.discount > 0 && (
-                         <span className="text-[7px] font-black text-emerald-500 uppercase">-{Math.floor(bonuses.discount * 100)}% Industrial Discount</span>
+                         <span className="text-[7px] font-black text-emerald-500 uppercase">-{Math.floor(bonuses.discount * 100)}% Discount</span>
                        )}
                     </div>
                     <div className="grid grid-cols-3 landscape:grid-cols-1 gap-1.5">
@@ -160,6 +190,16 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
               </div>
             </div>
 
+            {selection.fleetId && (
+              <div className="p-3 bg-cyan-900/40 border border-cyan-500/30 rounded-xl">
+                 <div className="flex justify-between items-center mb-1">
+                    <span className="text-[8px] font-black text-cyan-400 uppercase tracking-widest">Fleet Active</span>
+                    <button onClick={() => onIssueOrder('DISBAND_FLEET')} className="text-[8px] font-black text-slate-500 uppercase hover:text-white">Exit Fleet</button>
+                 </div>
+                 <p className="text-[10px] text-slate-300 italic">{fleetMembers.length} ships moving at 80 speed</p>
+              </div>
+            )}
+
             {isMine && (
               <button 
                 onClick={() => onIssueOrder('SET_COURSE')}
@@ -169,26 +209,20 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
                     : 'bg-cyan-600 text-white'
                 }`}
               >
-                {isSettingCourse ? 'TARGETING...' : 'INITIATE NAV-LINK'}
+                {isSettingCourse ? 'TARGETING...' : (selection.fleetId ? 'NAV-LINK FLEET' : 'INITIATE NAV-LINK')}
               </button>
             )}
             
             <div className="grid grid-cols-2 gap-2">
                <div className="p-2 bg-slate-950/40 rounded-lg text-center border border-white/5">
                   <span className="block text-[7px] text-slate-600 uppercase font-black">Vel.</span>
-                  <span className="text-[10px] font-bold text-white">{selection.speed}</span>
+                  <span className="text-[10px] font-bold text-white">{selection.fleetId ? 80 : selection.speed}</span>
                </div>
                <div className="p-2 bg-slate-950/40 rounded-lg text-center border border-white/5">
                   <span className="block text-[7px] text-slate-600 uppercase font-black">Atk.</span>
                   <span className="text-[10px] font-bold text-white">{selection.attack === 0 ? 'N/A' : selection.attack}</span>
                </div>
             </div>
-
-            {selection.type === 'SCOUT' && selection.status === 'ORBITING' && selection.owner === playerRole && (
-               <div className="p-2 bg-emerald-600/20 border border-emerald-500/30 rounded-lg text-center">
-                  <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest">Intelligence Mission Active</span>
-               </div>
-            )}
           </div>
         )}
       </div>

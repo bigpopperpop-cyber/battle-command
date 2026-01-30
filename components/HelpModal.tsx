@@ -28,7 +28,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
   const myPlanets = isPlayer && gameState ? gameState.planets.filter(p => p.owner === playerRole) : [];
   const myShips = isPlayer && gameState ? gameState.ships.filter(s => s.owner === playerRole) : [];
 
-  const bonuses = isPlayer && gameState ? getEmpireBonuses(gameState.planets, playerRole!) : { discount: 0, strength: 1, factoryCount: 0, scoutBonus: 0, warshipCapacity: 0 };
+  const bonuses = isPlayer && gameState ? getEmpireBonuses(gameState.planets, playerRole!) : { discount: 0, strength: 1, firepowerBonus: 0, factoryCount: 0, scoutBonus: 0, warshipCapacity: 0 };
 
   const TabButton: React.FC<{ id: HelpTab; label: string; icon: string }> = ({ id, label, icon }) => (
     <button
@@ -89,35 +89,10 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                    </div>
 
                    <div className="p-4 bg-red-950/20 border border-red-500/30 rounded-2xl">
-                     <h5 className="text-red-400 font-black text-[10px] uppercase mb-1">Bombardment Intel</h5>
+                     <h5 className="text-red-400 font-black text-[10px] uppercase mb-1">Tactical Combat</h5>
                      <p className="text-[11px] text-slate-300 leading-relaxed">
-                       Every enemy <span className="text-white font-bold italic">Warship</span> in orbit destroys <span className="text-white font-bold">1 citizen</span> per turn. Planets are captured when population hits 0.
+                       Warships automatically engage enemy vessels at the same planet. <span className="text-white font-bold">25 Base Damage</span> + <span className="text-emerald-400 font-bold">0.5 per Factory</span> in your empire.
                      </p>
-                   </div>
-
-                   <div className="space-y-2">
-                     <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Vessel Registry</h4>
-                     {myShips.length === 0 ? (
-                       <p className="text-xs text-slate-600 italic">No ships currently under command.</p>
-                     ) : (
-                       myShips.map(s => (
-                         <div key={s.id} className="flex items-center justify-between p-4 bg-slate-900/50 rounded-2xl border border-white/5">
-                            <div className="flex items-center gap-3">
-                               <span className="text-xl">{s.type === 'SCOUT' ? '🚀' : s.type === 'FREIGHTER' ? '📦' : '⚔️'}</span>
-                               <div>
-                                  <p className="text-xs font-bold text-white leading-none mb-1">{s.name}</p>
-                                  <p className="text-[9px] font-black text-cyan-500 uppercase">{s.status}</p>
-                               </div>
-                            </div>
-                            <div className="text-right">
-                               <p className="text-[10px] font-black text-slate-500">HP {s.hp}/{s.maxHp}</p>
-                               <div className="w-16 h-1 bg-slate-800 rounded-full mt-1 overflow-hidden">
-                                  <div className="h-full bg-emerald-500" style={{ width: `${(s.hp/s.maxHp)*100}%` }} />
-                               </div>
-                            </div>
-                         </div>
-                       ))
-                     )}
                    </div>
                  </>
                ) : (
@@ -146,9 +121,8 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                        </div>
                     </div>
                     <div className="mt-4 space-y-1">
-                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">20 Factories:</span> Warships can carry 1 person.</p>
-                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">25 Factories:</span> Warships can carry 2 people.</p>
-                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">30 Factories:</span> Warships can carry 4 people.</p>
+                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">Max Factories (5):</span> Grants defensive shield (10% casualty survival).</p>
+                      <p className="text-[8px] text-slate-500"><span className="text-white font-bold">Industrial Boom (5F + 10M):</span> Boosts population growth to <span className="text-emerald-400 font-bold">+1.0 / turn</span>.</p>
                     </div>
                   </div>
 
@@ -163,37 +137,6 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                           <p className="text-xl font-bold text-emerald-400">+{myPlanets.reduce((a, p) => a + (p.mines * 50) + (p.factories * 20) + (Math.floor(p.population) * 50), 0)}</p>
                        </div>
                     </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/5">
-                      <h5 className="text-cyan-400 font-black text-[10px] uppercase mb-1">Factories ({MAX_FACTORIES} Max/Pl)</h5>
-                      <p className="text-[11px] text-slate-400">Powers milestones and provides global construction bonuses.</p>
-                    </div>
-                    <div className="p-4 bg-slate-900/80 rounded-2xl border border-white/5">
-                      <h5 className="text-amber-400 font-black text-[10px] uppercase mb-1">Mines ({MAX_MINES} Max/Pl)</h5>
-                      <p className="text-[11px] text-slate-400">Major source of turn-based credit income.</p>
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-3">Colonial Holdings ({myPlanets.length})</h4>
-                    {myPlanets.map(p => (
-                      <div key={p.id} className="grid grid-cols-4 gap-2 p-4 bg-slate-900/50 rounded-2xl border border-white/5">
-                         <div className="col-span-2">
-                            <p className="text-xs font-bold text-white truncate">{p.name}</p>
-                            <p className="text-[9px] font-black text-slate-500 uppercase">👤 {Math.floor(p.population)} / {MAX_PLANET_POPULATION} Citizens</p>
-                         </div>
-                         <div className="text-center">
-                            <p className="text-[8px] font-black text-slate-600 uppercase">Mines</p>
-                            <p className="text-xs font-bold">{p.mines}</p>
-                         </div>
-                         <div className="text-center">
-                            <p className="text-[8px] font-black text-slate-600 uppercase">Fact.</p>
-                            <p className="text-xs font-bold">{p.factories}</p>
-                         </div>
-                      </div>
-                    ))}
                   </div>
                 </>
               ) : (
@@ -216,22 +159,23 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
           {activeTab === 'GOAL' && (
             <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2">
               <div className="p-6 bg-cyan-500/5 border border-cyan-500/20 rounded-3xl">
-                <h4 className="text-cyan-400 font-black text-xs uppercase tracking-widest mb-2">Population Core</h4>
-                <p className="text-sm text-slate-300 leading-relaxed mb-4">
-                  Citizens are your empire's lifeblood. Every turn, owned planets generate <span className="text-white font-bold">+1 person</span> (max 5).
-                </p>
-                <div className="space-y-2">
+                <h4 className="text-cyan-400 font-black text-xs uppercase tracking-widest mb-2">Combat & Logistics</h4>
+                <div className="space-y-3">
                    <div className="flex gap-3">
-                     <span className="text-xl">🚢</span>
-                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Transport:</span> Freighters move 2 people. Advanced Warships can carry up to 4 people.</p>
+                     <span className="text-xl">⚔️</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Warship:</span> Deals damage to 1 enemy ship per turn. Firepower grows with your empire's factory count.</p>
                    </div>
                    <div className="flex gap-3">
-                     <span className="text-xl">💣</span>
-                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Invasion:</span> Warships kill 1 person per turn. At 0 people, the planet is captured.</p>
+                     <span className="text-xl">🛡️</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Defensive Shield:</span> Planets with 5 factories have a 10% chance to save citizens from warship bombardment.</p>
                    </div>
                    <div className="flex gap-3">
-                     <span className="text-xl">🏭</span>
-                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Industry:</span> Each Factory provides a <span className="text-white font-bold">1% global ship buff</span>. High factory counts unlock unique hull capabilities.</p>
+                     <span className="text-xl">📈</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Growth:</span> Planets with 5 factories and 10 mines gain +1 population per turn during peace.</p>
+                   </div>
+                   <div className="flex gap-3">
+                     <span className="text-xl">❤️</span>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Repair:</span> Ships heal <span className="text-white font-bold">25% HP</span> every turn they orbit their own planets while not in combat.</p>
                    </div>
                 </div>
               </div>
@@ -259,29 +203,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                      <p className="text-xs text-slate-300 leading-relaxed"><span className="text-white font-bold">Order Push:</span> Allies tap "Push Tactical Data" to sync their intent to your bridge.</p>
                    </div>
                  </div>
-
-                 {isHost && onOpenInvite && (
-                   <div className="mt-6 p-4 bg-cyan-500/10 border-t border-cyan-500/20 rounded-b-3xl -mx-6 -mb-6">
-                     <button 
-                       onClick={() => {
-                         onClose();
-                         onOpenInvite();
-                       }}
-                       className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-cyan-900/40 transition-all active:scale-95 flex items-center justify-center gap-3"
-                     >
-                       <span>📡</span> OPEN RECRUITMENT PORTAL
-                     </button>
-                   </div>
-                 )}
                </div>
-
-               {!isHost && (
-                 <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl">
-                   <p className="text-[10px] text-amber-500 font-bold uppercase text-center leading-relaxed">
-                     ONLY THE SECTOR HOST (P1) CAN<br/>GENERATE RECRUITMENT LINKS
-                   </p>
-                 </div>
-               )}
             </div>
           )}
         </div>

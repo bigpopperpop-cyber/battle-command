@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { GameState, Owner, AiDifficulty, Planet, Ship, ShipType } from './types';
-import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE, getEmpireBonuses } from './gameLogic';
+import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE, getEmpireBonuses, MAX_FACTORIES, MAX_MINES } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import NewGameModal from './components/NewGameModal';
@@ -77,7 +77,6 @@ const App: React.FC = () => {
     }
 
     setGameState(prev => {
-      // If already ready, un-ready them if they make a change
       const readyPlayers = (prev.readyPlayers || []).filter(p => p !== playerRole);
       const nextState = { ...prev, readyPlayers };
       const selected = prev.planets.find(p => p.id === selectedId) || prev.ships.find(s => s.id === selectedId);
@@ -122,6 +121,24 @@ const App: React.FC = () => {
             status: 'ORBITING'
          };
          nextState.ships = [...prev.ships, newShip];
+      } else if (type === 'FORM_FLEET' && selected && 'population' in selected) {
+        const fleetId = `f-${playerRole}-${Date.now()}`;
+        nextState.ships = prev.ships.map(s => 
+          (s.currentPlanetId === selected.id && s.owner === playerRole) ? { ...s, fleetId } : s
+        );
+      } else if (type === 'DISBAND_FLEET' && selected) {
+        const targetId = 'population' in selected ? selected.id : null;
+        const fleetToDisband = 'fleetId' in selected ? selected.fleetId : null;
+        
+        if (targetId) {
+          nextState.ships = prev.ships.map(s => 
+            (s.currentPlanetId === targetId && s.owner === playerRole) ? { ...s, fleetId: undefined } : s
+          );
+        } else if (fleetToDisband) {
+          nextState.ships = prev.ships.map(s => 
+            (s.fleetId === fleetToDisband) ? { ...s, fleetId: undefined } : s
+          );
+        }
       }
 
       if (db && gameId && !isConfigPlaceholder) {
@@ -154,10 +171,16 @@ const App: React.FC = () => {
       if (ship && target) {
         setGameState(prev => {
           const readyPlayers = (prev.readyPlayers || []).filter(p => p !== playerRole);
+          const fleetId = ship.fleetId;
           const newState = {
             ...prev,
             readyPlayers,
-            ships: prev.ships.map(s => s.id === selectedId ? { ...s, targetPlanetId: id, status: 'MOVING' } : s)
+            ships: prev.ships.map(s => {
+              if (s.id === selectedId || (fleetId && s.fleetId === fleetId)) {
+                return { ...s, targetPlanetId: id, status: 'MOVING' };
+              }
+              return s;
+            })
           };
           if (db && gameId && !isConfigPlaceholder) {
              set(ref(db, `games/${gameId}/state`), newState);
@@ -185,9 +208,6 @@ const App: React.FC = () => {
   }, [gameState.playerCount, gameState.aiPlayers]);
 
   const allPlayersReady = useMemo(() => {
-    // If we're offline or just one human, we don't strictly wait for 'ready' state to enable host execute
-    // but the prompt says "the host can execute the turn UNTIL all players submit there turn"
-    // (Assuming they meant "CAN'T" or that they need to wait)
     return humanPlayers.every(p => (gameState.readyPlayers || []).includes(p));
   }, [humanPlayers, gameState.readyPlayers]);
 
@@ -230,11 +250,12 @@ const App: React.FC = () => {
                 id: `s-${aiId}-${Date.now()}-${Math.random()}`,
                 name: `AI ${type}`,
                 type, owner: aiId, x: p.x, y: p.y,
-                currentPlanetId: p.id, status: 'ORBITING',
+                currentPlanetId: p.id,
                 cargo: 0, maxCargo: baseStats.cargo, 
                 cargoPeople: type === 'FREIGHTER' ? 1 : 0, 
                 maxPeopleCargo: peopleCapacity,
-                hp: boostedHp, maxHp: boostedHp, attack: boostedAtk, speed: baseStats.speed
+                hp: boostedHp, maxHp: boostedHp, attack: boostedAtk, speed: baseStats.speed,
+                status: 'ORBITING'
               });
             }
           }
@@ -268,24 +289,70 @@ const App: React.FC = () => {
         });
       });
 
-      // --- 2. Resolution Layer ---
+      // --- 2. Resolution Layer: Movement ---
+      const fleetTargets = new Map<string, string>();
+      nextShips.forEach(s => {
+        if (s.fleetId && s.targetPlanetId) fleetTargets.set(s.fleetId, s.targetPlanetId);
+      });
+
       nextShips = nextShips.map(ship => {
-        if (ship.targetPlanetId) {
-          const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
+        const targetId = ship.targetPlanetId || (ship.fleetId ? fleetTargets.get(ship.fleetId) : null);
+        if (targetId) {
+          const target = nextPlanets.find(p => p.id === targetId);
           if (target) {
             const dx = target.x - ship.x;
             const dy = target.y - ship.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist <= ship.speed) {
+            const actualSpeed = ship.fleetId ? 80 : ship.speed;
+
+            if (dist <= actualSpeed) {
               return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id, targetPlanetId: undefined };
             } else {
-              return { ...ship, x: ship.x + (dx/dist) * ship.speed, y: ship.y + (dy/dist) * ship.speed, status: 'MOVING' };
+              return { ...ship, x: ship.x + (dx/dist) * actualSpeed, y: ship.y + (dy/dist) * actualSpeed, status: 'MOVING', targetPlanetId: targetId };
             }
           }
         }
         return ship;
       });
 
+      // --- 3. Combat & Healing Logic ---
+      const damageMap: Record<string, number> = {};
+      const shipBattled: Set<string> = new Set();
+
+      nextPlanets.forEach(planet => {
+        const shipsAtPlanet = nextShips.filter(s => s.currentPlanetId === planet.id && s.status === 'ORBITING');
+        const owners = Array.from(new Set(shipsAtPlanet.map(s => s.owner)));
+        
+        if (owners.length > 1) {
+          shipsAtPlanet.forEach(attacker => {
+            if (attacker.type === 'WARSHIP') {
+              const enemies = shipsAtPlanet.filter(s => s.owner !== attacker.owner);
+              if (enemies.length > 0) {
+                const target = enemies[0];
+                const bonuses = getEmpireBonuses(nextPlanets, attacker.owner);
+                const damage = 25 + bonuses.firepowerBonus;
+                damageMap[target.id] = (damageMap[target.id] || 0) + damage;
+                shipBattled.add(attacker.id);
+                shipBattled.add(target.id);
+              }
+            }
+          });
+        }
+
+        shipsAtPlanet.forEach(ship => {
+          if (planet.owner === ship.owner && !shipBattled.has(ship.id)) {
+            const healAmount = Math.floor(ship.maxHp * 0.25);
+            ship.hp = Math.min(ship.maxHp, ship.hp + healAmount);
+          }
+        });
+      });
+
+      nextShips = nextShips.map(s => {
+        if (damageMap[s.id]) s.hp -= damageMap[s.id];
+        return s;
+      }).filter(s => s.hp > 0);
+
+      // --- 4. Planet Updates ---
       nextPlanets = nextPlanets.map(p => {
         if (p.owner === 'NEUTRAL') {
            const colonist = nextShips.find(s => s.currentPlanetId === p.id && (s.type === 'FREIGHTER' || s.maxPeopleCargo > 0));
@@ -296,11 +363,25 @@ const App: React.FC = () => {
         const invaders = nextShips.filter(s => s.currentPlanetId === p.id && s.owner !== p.owner && s.type === 'WARSHIP');
         const spies = nextShips.filter(s => s.currentPlanetId === p.id && s.owner !== p.owner && s.type === 'SCOUT' && s.status === 'ORBITING');
 
+        const hasDefensiveShield = p.factories >= MAX_FACTORIES;
+        const hasIndustrialBoom = p.factories >= MAX_FACTORIES && p.mines >= MAX_MINES;
+
         let nextPop = p.population;
         if (invaders.length > 0) {
-           nextPop = Math.max(0, p.population - invaders.length);
+           let popLoss = invaders.length;
+           // Max Level Shield: 10% chance to save each person
+           if (hasDefensiveShield) {
+              let saved = 0;
+              for(let i=0; i<popLoss; i++) {
+                if (Math.random() < 0.10) saved++;
+              }
+              popLoss -= saved;
+           }
+           nextPop = Math.max(0, p.population - popLoss);
         } else {
-           nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2); 
+           // Industrial Boom: Increase population by 1 instead of 0.2
+           const growthRate = hasIndustrialBoom ? 1.0 : 0.2;
+           nextPop = Math.min(MAX_PLANET_POPULATION, p.population + growthRate); 
         }
 
         let maxSabotage = 0;
@@ -327,7 +408,7 @@ const App: React.FC = () => {
         planets: nextPlanets,
         ships: nextShips,
         playerCredits: nextCredits,
-        readyPlayers: [] // Reset ready state for next turn
+        readyPlayers: [] 
       };
 
       if (db && gameId && !isConfigPlaceholder) {
