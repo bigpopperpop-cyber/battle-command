@@ -8,6 +8,7 @@ import NewGameModal from './components/NewGameModal';
 import LobbyModal from './components/LobbyModal';
 import HelpModal from './components/HelpModal';
 import SelectionPanel from './components/SelectionPanel';
+import InviteModal from './components/InviteModal';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, Database } from 'firebase/database';
 
@@ -37,6 +38,7 @@ const App: React.FC = () => {
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingCourse, setIsSettingCourse] = useState(false);
 
@@ -288,7 +290,19 @@ const App: React.FC = () => {
       </main>
 
       <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
-      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
+      <HelpModal 
+        isOpen={isHelpOpen} 
+        onClose={() => setIsHelpOpen(false)} 
+        onOpenInvite={() => setIsInviteOpen(true)}
+        gameState={gameState} 
+        playerRole={playerRole} 
+      />
+      <InviteModal 
+        isOpen={isInviteOpen} 
+        onClose={() => setIsInviteOpen(false)} 
+        frequency={gameId || 'OFFLINE'} 
+        gameState={gameState} 
+      />
     </div>
   );
 };
