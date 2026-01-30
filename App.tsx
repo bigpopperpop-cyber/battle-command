@@ -118,6 +118,7 @@ const App: React.FC = () => {
   };
 
   const executeTurn = async () => {
+    if (isProcessing) return;
     setIsProcessing(true);
     try {
       let nextPlanets = gameState.planets.map(p => ({...p}));
@@ -214,21 +215,41 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk'] safe-pt safe-pb">
-      <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
+      <header className="h-16 md:h-20 flex items-center justify-between px-4 md:px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
         <div className="flex items-center gap-3">
           <div className="flex flex-col">
-            <span className="text-[9px] md:text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none truncate max-w-[120px] md:max-w-none">
+            <span className="text-[9px] md:text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none truncate max-w-[100px] md:max-w-none">
               {viewMode === 'HOST' ? 'HQ (P1)' : `CMD (${playerRole})`}
             </span>
             <span className="text-[8px] md:text-[9px] font-bold text-slate-500 uppercase">RND {gameState.round}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 md:gap-4">
-          <div className="flex flex-col items-end mr-1 md:mr-0">
+
+        <div className="flex items-center gap-2 md:gap-4 flex-1 justify-end">
+          {viewMode === 'HOST' && (
+            <button 
+              onClick={executeTurn} 
+              disabled={isProcessing} 
+              className={`px-4 md:px-6 py-2.5 rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-30 border-b-2 flex items-center gap-2 ${isProcessing ? 'bg-slate-800 border-slate-900 text-slate-500' : 'bg-emerald-600 border-emerald-800 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-900/20'}`}
+            >
+              {isProcessing ? (
+                <div className="w-3 h-3 border-2 border-slate-500/20 border-t-slate-500 rounded-full animate-spin" />
+              ) : (
+                <span className="hidden md:inline">📡</span>
+              )}
+              {isProcessing ? 'SYNCING' : 'EXECUTE'}
+            </button>
+          )}
+
+          <div className="flex flex-col items-end px-2 md:px-3 py-1 bg-slate-900/60 rounded-xl border border-white/5 min-w-[70px] md:min-w-[90px]">
+            <span className="text-[7px] md:text-[8px] font-black text-slate-500 uppercase leading-none mb-1">Credits</span>
             <span className="text-[10px] md:text-xs font-bold text-amber-500">💰 {gameState.playerCredits[playerRole || 'P1'] || 0}</span>
           </div>
-          <button onClick={() => setIsAdvisorOpen(true)} className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20">🤖</button>
-          <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm border border-white/5">?</button>
+
+          <div className="flex items-center gap-1.5 md:gap-2">
+            <button onClick={() => setIsAdvisorOpen(true)} className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20 hover:bg-cyan-600/30 transition-colors">🤖</button>
+            <button onClick={() => setIsHelpOpen(true)} className="w-8 h-8 md:w-10 md:h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm border border-white/5 hover:bg-slate-700 transition-colors">?</button>
+          </div>
         </div>
       </header>
 
@@ -241,18 +262,6 @@ const App: React.FC = () => {
           isSettingCourse={isSettingCourse} 
         />
         
-        {viewMode === 'HOST' && (
-          <div className={`absolute z-40 transition-all duration-300 ${selectedObject ? 'bottom-44 landscape:bottom-10 landscape:right-96' : 'bottom-8 right-1/2 translate-x-1/2'}`}>
-            <button 
-              onClick={executeTurn} 
-              disabled={isProcessing} 
-              className="px-8 py-4 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-950/40 transition-all active:scale-95 disabled:opacity-30 border-b-4 border-emerald-800 flex items-center gap-3 whitespace-nowrap"
-            >
-              {isProcessing ? 'SYNCING...' : 'EXECUTE TURN'}
-            </button>
-          </div>
-        )}
-
         <SelectionPanel 
           selection={selectedObject} 
           onClose={() => setSelectedId(null)}
