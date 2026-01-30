@@ -11,10 +11,6 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "firebase": "^10.13.2",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "jsqr": "^1.4.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
