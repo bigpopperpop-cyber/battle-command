@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { GameState, Owner, AiDifficulty } from './types';
+import { GameState, Owner } from './types';
 import { generateInitialState } from './gameLogic';
 import MapView from './components/MapView';
 import NewGameModal from './components/NewGameModal';
@@ -9,18 +9,21 @@ import { getDatabase, ref, onValue, Database } from 'firebase/database';
 
 // --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
+  // Your specific Realtime Database URL
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
 };
 
 // Initialize Firebase App and Database service safely
 let db: Database | null = null;
-const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
+const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("your-project-id");
 
 try {
+    // Standard Firebase Modular initialization
     const firebaseApp: FirebaseApp = getApps().length === 0 
         ? initializeApp(firebaseConfig) 
         : getApp();
         
+    // Fixed: Using 'firebaseApp' consistently to avoid "Service database not available"
     db = getDatabase(firebaseApp);
     console.log("Stellar Command Relay Link Established.");
 } catch (e) {
@@ -28,15 +31,10 @@ try {
 }
 
 const App: React.FC = () => {
-  const [hasStarted, setHasStarted] = useState(false);
   const [gameId, setGameId] = useState<string | null>(null);
-  const [playerRole, setPlayerRole] = useState<Owner | null>(null);
-  const [viewMode, setViewMode] = useState<'HOST' | 'PLAYER'>('HOST');
-
   const [gameState, setGameState] = useState<GameState>(() => generateInitialState(2, 0));
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
-  const [isProcessing, setIsProcessing] = useState(false);
 
   // Real-time State Synchronization
   useEffect(() => {
@@ -64,9 +62,8 @@ const App: React.FC = () => {
         {(!db || isConfigPlaceholder) ? (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm z-[100]">
              <div className="bg-slate-900 border border-red-900/50 p-8 rounded-2xl shadow-2xl max-w-md w-full text-center">
-                <div className="text-red-500 font-bold mb-4 tracking-widest text-sm uppercase italic underline">Relay Offline: Update DatabaseURL in App.tsx</div>
-                <button className="w-full bg-slate-800 text-slate-500 py-3 rounded-lg font-bold uppercase tracking-widest text-xs mb-2 cursor-not-allowed">Create New Galaxy</button>
-                <div className="mt-4 text-[9px] text-slate-600">Error: Service Database Not Available</div>
+                <div className="text-red-500 font-bold mb-4 tracking-widest text-sm uppercase italic">Relay Offline: Check App.tsx</div>
+                <button className="w-full bg-slate-800 text-slate-500 py-3 rounded-lg font-bold uppercase tracking-widest text-xs cursor-not-allowed">Initialize New Galaxy</button>
              </div>
           </div>
         ) : (
