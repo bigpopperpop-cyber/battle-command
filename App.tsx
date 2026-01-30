@@ -21,7 +21,7 @@ try {
         ? initializeApp(firebaseConfig) 
         : getApp();
         
-    // FIXED: Correctly linking the app to the database
+    // FIXED: Linking 'firebaseApp' to getDatabase to resolve the Relay error
     db = getDatabase(firebaseApp);
     console.log("Stellar Command Relay Link Established.");
 } catch (e) {
