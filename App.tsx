@@ -208,7 +208,10 @@ const App: React.FC = () => {
   }, [gameState.playerCount, gameState.aiPlayers]);
 
   const allPlayersReady = useMemo(() => {
-    return humanPlayers.every(p => (gameState.readyPlayers || []).includes(p));
+    // Other human players (allies/competitors) must be ready. 
+    // The host (P1) is the one pushing the button, so we don't block them from themselves.
+    const others = humanPlayers.filter(p => p !== 'P1');
+    return others.every(p => (gameState.readyPlayers || []).includes(p));
   }, [humanPlayers, gameState.readyPlayers]);
 
   const executeTurn = async () => {
@@ -509,7 +512,7 @@ const App: React.FC = () => {
               {isProcessing ? (
                 <div className="w-3 h-3 border-2 border-slate-500/20 border-t-slate-500 rounded-full animate-spin" />
               ) : !allPlayersReady ? (
-                <span>⏳ WAITING ({gameState.readyPlayers?.length || 0}/{humanPlayers.length})</span>
+                <span>⏳ WAITING ({(gameState.readyPlayers || []).filter(p => p !== 'P1').length}/{humanPlayers.length - 1})</span>
               ) : (
                 <>
                   <span className="hidden md:inline">📡</span>
