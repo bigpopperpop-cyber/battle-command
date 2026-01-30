@@ -12,7 +12,6 @@ import SelectionPanel from './components/SelectionPanel';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, update, onDisconnect, get, Database } from 'firebase/database';
 
-// --- FIREBASE CONFIGURATION ---
 const firebaseConfig = {
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
@@ -53,23 +52,14 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [gameId]);
 
-  useEffect(() => {
-    if (!db || !gameId || viewMode !== 'HOST' || isConfigPlaceholder) return;
-    const ordersRef = ref(db, `games/${gameId}/orders`);
-    const unsubscribe = onValue(ordersRef, (snapshot) => {
-      const orders = snapshot.val();
-      if (orders) {
-        setGameState(prev => ({ ...prev, readyPlayers: Object.keys(orders) as Owner[] }));
-      } else {
-        setGameState(prev => ({ ...prev, readyPlayers: [] }));
-      }
-    });
-    return () => unsubscribe();
-  }, [gameId, viewMode]);
-
   const handleIssueOrder = (type: string, payload?: any) => {
     if (!playerRole) return;
     
+    if (type === 'SET_COURSE') {
+      setIsSettingCourse(true);
+      return;
+    }
+
     setGameState(prev => {
       const nextState = { ...prev };
       const selected = prev.planets.find(p => p.id === selectedId) || prev.ships.find(s => s.id === selectedId);
@@ -82,8 +72,6 @@ const App: React.FC = () => {
         if (nextState.playerCredits[playerRole] < 800) return prev;
         nextState.playerCredits[playerRole] -= 800;
         nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
-      } else if (type === 'SET_COURSE') {
-        setIsSettingCourse(true);
       } else if (type === 'BUILD_SHIP' && selected && 'population' in selected) {
          const shipType = payload.type as ShipType;
          const stats = SHIP_STATS[shipType];
@@ -124,6 +112,9 @@ const App: React.FC = () => {
         }));
         setIsSettingCourse(false);
         return;
+      } else if (ship && !target) {
+        // If they click something else that isn't a planet, cancel movement mode but select that thing
+        setIsSettingCourse(false);
       }
     }
     setSelectedId(id);
@@ -254,7 +245,8 @@ const App: React.FC = () => {
           planets={gameState.planets} 
           ships={gameState.ships} 
           selectedId={selectedId} 
-          onSelect={handleSelect} 
+          onSelect={handleSelect}
+          isSettingCourse={isSettingCourse} 
         />
         
         {viewMode === 'HOST' && (
