@@ -42,6 +42,24 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingCourse, setIsSettingCourse] = useState(false);
 
+  // Deep Link Detection: Check URL for gameId and role on mount
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlGameId = params.get('gameId');
+    const urlRole = params.get('role') as Owner | null;
+
+    if (urlGameId && urlRole) {
+      console.log(`Auto-Join protocol initiated for Sector ${urlGameId} as ${urlRole}`);
+      setGameId(urlGameId);
+      setPlayerRole(urlRole);
+      setViewMode('PLAYER');
+      setHasStarted(true);
+      // Clean URL without refreshing
+      window.history.replaceState({}, '', window.location.pathname);
+    }
+  }, []);
+
+  // Sync state from Firebase when gameId is set
   useEffect(() => {
     if (!db || !gameId || isConfigPlaceholder) return;
     const stateRef = ref(db, `games/${gameId}/state`);
@@ -97,6 +115,13 @@ const App: React.FC = () => {
          };
          nextState.ships = [...prev.ships, newShip];
       }
+
+      // If we are in a multiplayer game, Host's local changes should sync to Firebase immediately
+      // This is optional for turn-based but helpful for showing 'intent'
+      if (db && gameId && viewMode === 'HOST' && !isConfigPlaceholder) {
+        set(ref(db, `games/${gameId}/state`), nextState);
+      }
+
       return nextState;
     });
   };
@@ -106,10 +131,16 @@ const App: React.FC = () => {
       const ship = gameState.ships.find(s => s.id === selectedId);
       const target = gameState.planets.find(p => p.id === id);
       if (ship && target) {
-        setGameState(prev => ({
-          ...prev,
-          ships: prev.ships.map(s => s.id === selectedId ? { ...s, targetPlanetId: id, status: 'MOVING' } : s)
-        }));
+        setGameState(prev => {
+          const newState = {
+            ...prev,
+            ships: prev.ships.map(s => s.id === selectedId ? { ...s, targetPlanetId: id, status: 'MOVING' } : s)
+          };
+          if (db && gameId && viewMode === 'HOST' && !isConfigPlaceholder) {
+             set(ref(db, `games/${gameId}/state`), newState);
+          }
+          return newState;
+        });
         setIsSettingCourse(false);
         return;
       } else if (ship && !target) {
@@ -161,7 +192,6 @@ const App: React.FC = () => {
            nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2); 
         }
 
-        // Spy Sabotage: Mines produce at 75% if a scout is spying
         const mineModifier = spies.length > 0 ? 0.75 : 1.0;
         const income = (p.mines * 50 * mineModifier) + (p.factories * 20) + (Math.floor(nextPop) * 50);
         nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
@@ -194,11 +224,36 @@ const App: React.FC = () => {
     return gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null;
   }, [selectedId, gameState]);
 
-  // Check if current player is spying on the selected planet
   const isSpiedByMe = useMemo(() => {
     if (!selectedId || !selectedObject || !('population' in selectedObject)) return false;
     return gameState.ships.some(s => s.owner === playerRole && s.type === 'SCOUT' && s.currentPlanetId === selectedId && s.status === 'ORBITING');
   }, [selectedId, selectedObject, gameState.ships, playerRole]);
+
+  const handleStartNewGame = async (playerCount: number, aiCount: number, names: Record<string, string>, difficulty: AiDifficulty) => {
+    const id = Math.random().toString(36).substring(2, 8).toUpperCase();
+    const initialState = generateInitialState(playerCount, aiCount, undefined, names, difficulty);
+    
+    setGameId(id);
+    setPlayerRole('P1');
+    setViewMode('HOST');
+    setGameState(initialState);
+    setHasStarted(true);
+
+    // Immediate Broadcast to Relay
+    if (db && !isConfigPlaceholder) {
+      try {
+        await set(ref(db, `games/${id}/state`), initialState);
+        await set(ref(db, `lobby/${id}`), {
+          name: `${names['P1']}'s Sector`,
+          round: 1,
+          playerCount
+        });
+        console.log(`Relay broadcast successful for Sector ${id}`);
+      } catch (e) {
+        console.error("Broadcasting failed", e);
+      }
+    }
+  };
 
   if (!hasStarted) {
     return (
@@ -215,15 +270,19 @@ const App: React.FC = () => {
             </button>
           </div>
         </div>
-        <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={(p, a, n, d) => {
-          const id = Math.random().toString(36).substring(2, 8).toUpperCase();
-          setGameId(id); setPlayerRole('P1'); setViewMode('HOST');
-          setGameState(generateInitialState(p, a, undefined, n, d));
-          setHasStarted(true);
-        }} />
-        <LobbyModal isOpen={isLobbyOpen} onClose={() => setIsLobbyOpen(false)} db={db} onJoin={(id, role) => {
-          setGameId(id); setPlayerRole(role); setViewMode('PLAYER'); setHasStarted(true);
-        }} />
+        <NewGameModal 
+          isOpen={isNewGameOpen} 
+          onClose={() => setIsNewGameOpen(false)} 
+          onConfirm={handleStartNewGame} 
+        />
+        <LobbyModal 
+          isOpen={isLobbyOpen} 
+          onClose={() => setIsLobbyOpen(false)} 
+          db={db} 
+          onJoin={(id, role) => {
+            setGameId(id); setPlayerRole(role); setViewMode('PLAYER'); setHasStarted(true);
+          }} 
+        />
       </div>
     );
   }
