@@ -16,7 +16,7 @@ const firebaseConfig = {
   // Replace this with your actual Firebase Realtime Database URL
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
 };
-
+databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com",
 let db: Database | null = null;
 const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
 
