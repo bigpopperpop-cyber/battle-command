@@ -5,12 +5,11 @@ import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS 
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
 import NewGameModal from './components/NewGameModal';
-import InviteModal from './components/InviteModal';
 import LobbyModal from './components/LobbyModal';
 import HelpModal from './components/HelpModal';
 import SelectionPanel from './components/SelectionPanel';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, update, onDisconnect, get, Database } from 'firebase/database';
+import { getDatabase, ref, onValue, set, Database } from 'firebase/database';
 
 const firebaseConfig = {
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
@@ -36,7 +35,6 @@ const App: React.FC = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
-  const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isLobbyOpen, setIsLobbyOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -113,7 +111,6 @@ const App: React.FC = () => {
         setIsSettingCourse(false);
         return;
       } else if (ship && !target) {
-        // If they click something else that isn't a planet, cancel movement mode but select that thing
         setIsSettingCourse(false);
       }
     }
@@ -127,7 +124,6 @@ const App: React.FC = () => {
       let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
-      // Move ships and handle arrival
       nextShips = nextShips.map(ship => {
         if (ship.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
@@ -145,14 +141,12 @@ const App: React.FC = () => {
         return ship;
       });
 
-      // Economy & Colonization/Siege
       nextPlanets = nextPlanets.map(p => {
         if (p.owner === 'NEUTRAL') {
            const colonist = nextShips.find(s => s.currentPlanetId === p.id && s.type === 'FREIGHTER');
            if (colonist) return { ...p, owner: colonist.owner, population: 1 };
            return p;
         }
-
         const invaders = nextShips.filter(s => s.currentPlanetId === p.id && s.owner !== p.owner && s.type === 'WARSHIP');
         let nextPop = p.population;
         if (invaders.length > 0) {
@@ -160,10 +154,8 @@ const App: React.FC = () => {
         } else {
            nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2); 
         }
-
         const income = (p.mines * 50) + (p.factories * 20) + (Math.floor(nextPop) * 50);
         nextCredits[p.owner] = (nextCredits[p.owner] || 0) + income;
-
         return { 
           ...p, 
           population: nextPop, 
@@ -194,17 +186,16 @@ const App: React.FC = () => {
 
   if (!hasStarted) {
     return (
-      <div className="fixed inset-0 flex flex-col items-center justify-center p-8 z-[500] star-bg">
-        <div className="w-full max-w-md glass-card rounded-[3rem] p-12 text-center shadow-2xl relative overflow-hidden border-cyan-500/20">
-          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent"></div>
-          <h1 className="text-6xl font-black text-white italic tracking-tighter mb-1">STELLAR</h1>
-          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-12">Galaxy Command HUB</p>
+      <div className="fixed inset-0 flex flex-col items-center justify-center p-6 z-[500] star-bg safe-pt safe-pb">
+        <div className="w-full max-w-sm glass-card rounded-[2.5rem] p-8 md:p-12 text-center shadow-2xl border-cyan-500/20">
+          <h1 className="text-5xl font-black text-white italic tracking-tighter mb-1">STELLAR</h1>
+          <p className="text-[10px] text-cyan-400 font-black uppercase tracking-[0.4em] mb-10">Sector Command</p>
           <div className="space-y-4">
-            <button onClick={() => setIsNewGameOpen(true)} className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 text-white rounded-3xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 border-cyan-800">
+            <button onClick={() => setIsNewGameOpen(true)} className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95 border-b-4 border-cyan-800">
               Initialize New Sector
             </button>
-            <button onClick={() => setIsLobbyOpen(true)} className="w-full py-5 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-3xl font-black text-xs uppercase tracking-widest border border-white/5 transition-all active:scale-95">
-              Scan Active Signatures
+            <button onClick={() => setIsLobbyOpen(true)} className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-cyan-400 rounded-2xl font-black text-xs uppercase tracking-widest border border-white/5 transition-all active:scale-95">
+              Scan Signatures
             </button>
           </div>
         </div>
@@ -222,21 +213,22 @@ const App: React.FC = () => {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk']">
-      <header className="h-16 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
-        <div className="flex items-center gap-4">
+    <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk'] safe-pt safe-pb">
+      <header className="h-14 md:h-16 flex items-center justify-between px-4 md:px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
+        <div className="flex items-center gap-3">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none">{viewMode === 'HOST' ? 'COMMANDER-IN-CHIEF (P1)' : `COMMANDER (${playerRole})`}</span>
-            <span className="text-[9px] font-bold text-slate-500 uppercase">Sector {gameId} // RND {gameState.round}</span>
+            <span className="text-[9px] md:text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-none truncate max-w-[120px] md:max-w-none">
+              {viewMode === 'HOST' ? 'HQ (P1)' : `CMD (${playerRole})`}
+            </span>
+            <span className="text-[8px] md:text-[9px] font-bold text-slate-500 uppercase">RND {gameState.round}</span>
           </div>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex flex-col items-end">
-            <span className="text-[8px] font-black text-slate-500 uppercase">Reserves</span>
-            <span className="text-xs font-bold text-amber-500">💰 {gameState.playerCredits[playerRole || 'P1'] || 0}</span>
+        <div className="flex items-center gap-2 md:gap-4">
+          <div className="flex flex-col items-end mr-1 md:mr-0">
+            <span className="text-[10px] md:text-xs font-bold text-amber-500">💰 {gameState.playerCredits[playerRole || 'P1'] || 0}</span>
           </div>
-          <button onClick={() => setIsAdvisorOpen(true)} className="w-10 h-10 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20">🤖</button>
-          <button onClick={() => setIsHelpOpen(true)} className="w-10 h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm border border-white/5">?</button>
+          <button onClick={() => setIsAdvisorOpen(true)} className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-cyan-600/20 flex items-center justify-center text-sm border border-cyan-500/20">🤖</button>
+          <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 md:w-10 md:h-10 rounded-xl bg-slate-800 flex items-center justify-center text-sm border border-white/5">?</button>
         </div>
       </header>
 
@@ -250,23 +242,13 @@ const App: React.FC = () => {
         />
         
         {viewMode === 'HOST' && (
-          <div className="absolute bottom-10 right-1/2 translate-x-1/2 md:translate-x-0 md:right-8 z-40 w-[85%] max-w-[280px]">
+          <div className={`absolute z-40 transition-all duration-300 ${selectedObject ? 'bottom-44 landscape:bottom-10 landscape:right-96' : 'bottom-8 right-1/2 translate-x-1/2'}`}>
             <button 
               onClick={executeTurn} 
               disabled={isProcessing} 
-              className="w-full py-5 bg-emerald-600 hover:bg-emerald-500 rounded-[2rem] text-[11px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-950/40 transition-all active:scale-95 disabled:opacity-30 border-b-4 border-emerald-800 flex items-center justify-center gap-3"
+              className="px-8 py-4 bg-emerald-600 hover:bg-emerald-500 rounded-full text-[10px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-emerald-950/40 transition-all active:scale-95 disabled:opacity-30 border-b-4 border-emerald-800 flex items-center gap-3 whitespace-nowrap"
             >
-              {isProcessing ? (
-                <>
-                  <div className="w-3 h-3 border-2 border-white/20 border-t-white rounded-full animate-spin" />
-                  SYNCING...
-                </>
-              ) : (
-                <>
-                  <span className="text-lg">📡</span>
-                  EXECUTE TURN
-                </>
-              )}
+              {isProcessing ? 'SYNCING...' : 'EXECUTE TURN'}
             </button>
           </div>
         )}
