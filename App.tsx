@@ -313,12 +313,20 @@ const App: React.FC = () => {
           </div>
 
           {!gameState ? (
-            <button 
-              onClick={() => setIsNewGameOpen(true)} 
-              className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
-            >
-              Initialize Galaxy
-            </button>
+            <div className="space-y-3">
+              <button 
+                onClick={() => setIsNewGameOpen(true)} 
+                className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
+              >
+                Initialize Galaxy
+              </button>
+              <button 
+                onClick={() => setIsHelpOpen(true)}
+                className="w-full py-4 bg-slate-900/60 border border-white/10 text-slate-400 hover:text-white rounded-2xl font-black text-[10px] uppercase tracking-widest transition-all"
+              >
+                📖 Open Field Manual
+              </button>
+            </div>
           ) : (
             <div className="space-y-3">
                <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active Battlezone Detected</p>
@@ -337,6 +345,12 @@ const App: React.FC = () => {
                    );
                  })}
                </div>
+               <button 
+                onClick={() => setIsHelpOpen(true)}
+                className="w-full py-3 text-slate-500 hover:text-white text-[9px] font-black uppercase tracking-widest transition-all"
+               >
+                View General Instructions
+               </button>
             </div>
           )}
         </div>
@@ -358,6 +372,7 @@ const App: React.FC = () => {
           setIsProcessing(false);
         }
       }} />
+      <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
   );
 
@@ -401,6 +416,7 @@ const App: React.FC = () => {
            )}
            <div className="bg-slate-900/80 px-4 py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-xs flex items-center gap-2">💰 {gameState?.playerCredits[playerRole || 'P1'] || 0}</div>
            <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5">🤖</button>
+           <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5">📖</button>
         </div>
       </header>
 
