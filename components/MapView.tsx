@@ -75,8 +75,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     if (!isDragging.current) return;
     const dx = x - startPos.current.x;
     const dy = y - startPos.current.y;
-    // Increase threshold to 15px for better touch support
-    if (Math.abs(dx) > 15 || Math.abs(dy) > 15) moved.current = true;
+    // Lowered threshold back to 10px to ensure quick taps are registered better
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved.current = true;
     setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy });
   };
 
@@ -92,7 +92,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     >
       <style>{`
         @keyframes laser-grow { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
-        @keyframes orbit-pulse { 0% { transform: scale(1); opacity: 0.1; } 50% { transform: scale(1.1); opacity: 0.2; } 100% { transform: scale(1); opacity: 0.1; } }
+        @keyframes target-pulse { 0% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.1); } 100% { opacity: 0.3; transform: scale(1); } }
       `}</style>
 
       <div 
@@ -104,7 +104,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
       >
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
 
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
           {combatEvents.map(ev => (
             <line key={ev.id} x1={ev.attackerPos.x} y1={ev.attackerPos.y} x2={ev.targetPos.x} y2={ev.targetPos.y} stroke={ev.color} strokeWidth="3" strokeDasharray="5,5" style={{ animation: 'laser-grow 0.5s infinite' }} />
           ))}
@@ -133,15 +133,16 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                   onSelect(p.id);
                 }
               }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-10 z-20`}
+              // Planets pushed to high Z during targeting to ensure they catch the tap
+              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-14 ${isSettingCourse ? 'z-50' : 'z-20'}`}
               style={{ left: p.x, top: p.y }}
             >
-              <div className="relative flex items-center justify-center">
-                <svg className="absolute w-24 h-24 overflow-visible pointer-events-none">
+              <div className="relative flex items-center justify-center pointer-events-none">
+                <svg className="absolute w-24 h-24 overflow-visible">
                   <circle cx="48" cy="48" r={ringRadius} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
                   <circle cx="48" cy="48" r={ringRadius} fill="none" stroke={p.owner === 'NEUTRAL' ? '#fff' : PLAYER_COLORS[p.owner]} strokeWidth="4" strokeDasharray={dashArray} strokeDashoffset={isScouted ? dashOffset : dashArray} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }} />
                   {isSettingCourse && (
-                    <circle cx="48" cy="48" r={ringRadius + 15} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="4,4" className="animate-[spin_4s_linear_infinite]" />
+                    <circle cx="48" cy="48" r={ringRadius + 20} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="4,8" style={{ animation: 'target-pulse 2s ease-in-out infinite' }} />
                   )}
                 </svg>
 
@@ -150,8 +151,10 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 </div>
               </div>
               
-              <div className={`mt-4 bg-black/60 px-3 py-1 rounded-full border border-white/10 transition-opacity whitespace-nowrap ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                <span className="text-[10px] font-black text-white uppercase">{isScouted ? p.name : 'Unknown Contact'}</span>
+              <div className={`mt-6 bg-black/80 px-3 py-1 rounded-full border border-white/10 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                <span className={`text-[10px] font-black uppercase ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
+                  {isSettingCourse && !isSelected ? `TARGET: ${p.name}` : (isScouted ? p.name : 'Unknown Contact')}
+                </span>
               </div>
             </div>
           );
@@ -159,9 +162,19 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
 
         {ships.map(s => {
           const pos = shipDisplayPositions[s.id] || { x: s.x, y: s.y };
+          const isCurrentSelected = selectedId === s.id;
           return (
-            <div key={s.id} onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(s.id); }} className="absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer p-6 z-40" style={{ left: pos.x, top: pos.y }}>
-              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 ${selectedId === s.id ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+            <div 
+              key={s.id} 
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (!moved.current) onSelect(s.id); 
+              }} 
+              // Disable ship interaction during targeting mode unless it's a DIFFERENT ship we want to select
+              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? 'pointer-events-none opacity-40' : 'pointer-events-auto'}`} 
+              style={{ left: pos.x, top: pos.y }}
+            >
+              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 ${isCurrentSelected ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
                 <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
             </div>
@@ -170,8 +183,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
       </div>
 
       <div className="absolute bottom-10 right-10 flex flex-col gap-2 z-50">
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl">-</button>
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10">+</button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10">-</button>
       </div>
     </div>
   );
