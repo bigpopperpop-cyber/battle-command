@@ -81,6 +81,18 @@ const App: React.FC = () => {
     };
   }, []);
 
+  const handleSelfDestruct = async () => {
+    if (!db || !window.confirm("ARE YOU SURE? THIS WILL TERMINATE THE GALAXY FOR EVERYONE.")) return;
+    setIsProcessing(true);
+    try {
+      await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), null);
+    } catch (e) {
+      console.error("Self-destruct failed:", e);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleIssueOrder = useCallback((type: string, payload?: any) => {
     if (!playerRole || !gameState || !db) return;
     
@@ -362,9 +374,22 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-4">
            {playerRole === 'P1' ? (
-             <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30">
-               Execute Turn ({humanPlayers.length > 1 ? `${gameState?.readyPlayers?.length || 0}/${humanPlayers.length - 1} Committed` : 'Ready'})
-             </button>
+             <div className="flex items-center gap-2">
+               <button 
+                 onClick={handleSelfDestruct} 
+                 disabled={isProcessing}
+                 className="px-4 py-3 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-30"
+               >
+                 💥 Reset Sector
+               </button>
+               <button 
+                 onClick={executeTurn} 
+                 disabled={isProcessing || !allPlayersReady} 
+                 className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg shadow-emerald-900/40"
+               >
+                 Execute Turn ({humanPlayers.length > 1 ? `${gameState?.readyPlayers?.length || 0}/${humanPlayers.length - 1} Committed` : 'Ready'})
+               </button>
+             </div>
            ) : (
              <button 
                onClick={() => handleIssueOrder('COMMIT')} 
