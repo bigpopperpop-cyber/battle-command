@@ -152,6 +152,38 @@ const App: React.FC = () => {
     });
   };
 
+  const handleSelect = (id: string) => {
+    // Logic for setting destination while in course-setting mode
+    if (isSettingCourse && selectedId) {
+      const selectedShip = gameState.ships.find(s => s.id === selectedId);
+      const targetPlanet = gameState.planets.find(p => p.id === id);
+
+      // Only allow setting target if selection is a ship and target is a planet
+      if (selectedShip && targetPlanet) {
+        setGameState(prev => {
+          const nextShips = prev.ships.map(s => 
+            s.id === selectedId 
+              ? { ...s, targetPlanetId: id, currentPlanetId: undefined, status: 'MOVING' as const } 
+              : s
+          );
+          const nextState = { ...prev, ships: nextShips };
+          
+          if (db && gameId && !isConfigPlaceholder) {
+            set(ref(db, `games/${gameId}/state`), nextState);
+          }
+          return nextState;
+        });
+        setIsSettingCourse(false);
+        return;
+      }
+    }
+    
+    // Normal selection
+    setSelectedId(id);
+    // If you tap a new object while setting course, and it wasn't a valid target, we cancel targeting
+    if (isSettingCourse) setIsSettingCourse(false);
+  };
+
   const executeTurn = async () => {
     if (isProcessing || !allPlayersReady) return;
     setIsProcessing(true);
@@ -373,7 +405,7 @@ const App: React.FC = () => {
           planets={gameState.planets} 
           ships={visibleShips} 
           selectedId={selectedId} 
-          onSelect={(id) => setSelectedId(id)}
+          onSelect={handleSelect}
           isSettingCourse={isSettingCourse}
           combatEvents={combatEvents}
         />
