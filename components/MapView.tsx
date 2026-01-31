@@ -67,7 +67,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     if (!isDragging.current) return;
     const dx = e.clientX - startPos.current.x;
     const dy = e.clientY - startPos.current.y;
-    // Lowered tolerance slightly to 15px for better tap vs drag distinction
     if (Math.abs(dx) > 15 || Math.abs(dy) > 15) moved.current = true;
     setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy });
   };
@@ -112,8 +111,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
 
         {planets.map(p => {
           const isSelected = selectedId === p.id;
-          // Fog of war disabled: all planets are always scouted
-          const isScouted = true;
           const ringRadius = 40;
           const dashArray = 2 * Math.PI * ringRadius;
           const popPercent = (p.population / MAX_PLANET_POPULATION) * 100;
@@ -128,7 +125,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                   onSelect(p.id);
                 }
               }}
-              // Planets pushed to extremely high Z during targeting to ensure they catch the tap
               className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-16 ${isSettingCourse ? 'z-[100]' : 'z-20'}`}
               style={{ left: p.x, top: p.y }}
             >
@@ -146,9 +142,9 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 </div>
               </div>
               
-              <div className={`mt-8 bg-black/90 px-4 py-1.5 rounded-full border border-white/20 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+              <div className={`mt-8 bg-black/90 px-4 py-1.5 rounded-full border border-white/20 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100 ring-2 ring-cyan-500/50' : 'opacity-80'}`}>
                 <span className={`text-[10px] font-black uppercase tracking-widest ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
-                  {isSettingCourse && !isSelected ? `NAV-SYNC: ${p.name}` : p.name}
+                  {isSettingCourse && !isSelected ? `NAV-TARGET: ${p.name}` : p.name}
                 </span>
               </div>
             </div>
@@ -165,13 +161,17 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 e.stopPropagation(); 
                 if (!moved.current) onSelect(s.id); 
               }} 
-              // Almost entirely disable ship interaction during targeting mode
-              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? 'pointer-events-none opacity-20' : 'pointer-events-auto'}`} 
+              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? 'pointer-events-none opacity-40' : 'pointer-events-auto'}`} 
               style={{ left: pos.x, top: pos.y }}
             >
-              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-opacity ${isCurrentSelected ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-all ${isCurrentSelected ? 'scale-150 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)] z-50' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
                 <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
+              {!isSettingCourse && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full mb-1 opacity-0 hover:opacity-100 transition-opacity bg-black/80 px-2 py-0.5 rounded border border-white/10 pointer-events-none whitespace-nowrap">
+                   <span className="text-[8px] font-bold text-white uppercase">{s.name}</span>
+                </div>
+              )}
             </div>
           );
         })}

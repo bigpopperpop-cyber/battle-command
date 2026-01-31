@@ -24,7 +24,6 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
   const isMine = selection.owner === playerRole;
   const pColor = PLAYER_COLORS[selection.owner];
 
-  // Logic to determine if detailed intel is available
   // Fog of war disabled: always provide full intel
   const hasIntel = true;
 
@@ -59,8 +58,9 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
         {isPlanet ? (
           <>
             <div className="flex justify-between items-center mb-2">
-              <span className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-500">
-                ● Deep Sensor Lock
+              <span className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-500 flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                Deep Sensor Lock
               </span>
             </div>
 
