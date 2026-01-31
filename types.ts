@@ -16,7 +16,7 @@ export interface Planet {
   batteries: number;
   defense: number; 
   maxDefense: number;
-  specialization: PlanetSpecialization; // New: Planet roles
+  specialization: PlanetSpecialization;
 }
 
 export type ShipType = 'SCOUT' | 'FREIGHTER' | 'WARSHIP';
@@ -28,8 +28,8 @@ export interface Ship {
   owner: Owner;
   x: number;
   y: number;
-  targetPlanetId?: string;
-  currentPlanetId?: string;
+  targetPlanetId: string | null;
+  currentPlanetId: string | null;
   fleetId?: string;
   cargo: number;
   maxCargo: number;

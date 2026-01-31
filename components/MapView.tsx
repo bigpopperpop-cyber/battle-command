@@ -69,7 +69,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     moved.current = false;
     startPos.current = { x: e.clientX, y: e.clientY };
     startOffset.current = { ...offset };
-    // Use pointer capture for smoother dragging across the whole window
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
@@ -77,8 +76,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     if (!isDragging.current) return;
     const dx = e.clientX - startPos.current.x;
     const dy = e.clientY - startPos.current.y;
-    // High tolerance (30px) for taps to distinguish them from intentional drags
-    if (Math.abs(dx) > 30 || Math.abs(dy) > 30) moved.current = true;
+    // Lowered tolerance slightly to 15px for better tap vs drag distinction
+    if (Math.abs(dx) > 15 || Math.abs(dy) > 15) moved.current = true;
     setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy });
   };
 
@@ -138,7 +137,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 }
               }}
               // Planets pushed to extremely high Z during targeting to ensure they catch the tap
-              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-16 ${isSettingCourse ? 'z-[60]' : 'z-20'}`}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-16 ${isSettingCourse ? 'z-[100]' : 'z-20'}`}
               style={{ left: p.x, top: p.y }}
             >
               <div className="relative flex items-center justify-center pointer-events-none">
@@ -174,11 +173,11 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 e.stopPropagation(); 
                 if (!moved.current) onSelect(s.id); 
               }} 
-              // Almost entirely disable ship interaction during targeting mode unless it's a target switch intent
-              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? (isCurrentSelected ? 'pointer-events-none' : 'pointer-events-auto') : 'pointer-events-auto'}`} 
+              // Almost entirely disable ship interaction during targeting mode
+              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? 'pointer-events-none opacity-20' : 'pointer-events-auto'}`} 
               style={{ left: pos.x, top: pos.y }}
             >
-              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-opacity ${isSettingCourse && !isCurrentSelected ? 'opacity-30' : 'opacity-100'} ${isCurrentSelected ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-opacity ${isCurrentSelected ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
                 <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
             </div>

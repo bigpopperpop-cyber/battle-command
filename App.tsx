@@ -152,6 +152,7 @@ const App: React.FC = () => {
           x: selected.x,
           y: selected.y,
           currentPlanetId: selected.id,
+          targetPlanetId: null,
           cargo: 0,
           maxCargo: baseStats.cargo,
           cargoPeople: 0,
@@ -187,7 +188,7 @@ const App: React.FC = () => {
         // SUCCESS: Ship targeted a planet
         const nextShips = gameState.ships.map(s => 
           s.id === selectedId 
-            ? { ...s, targetPlanetId: id, currentPlanetId: undefined, status: 'MOVING' as const } 
+            ? { ...s, targetPlanetId: id, currentPlanetId: null, status: 'MOVING' as const } 
             : s
         );
         const nextState = { 
@@ -242,7 +243,7 @@ const App: React.FC = () => {
             const dy = target.y - ship.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist <= ship.speed) {
-              return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id, targetPlanetId: undefined };
+              return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id, targetPlanetId: null };
             } else {
               return { ...ship, x: ship.x + (dx/dist) * ship.speed, y: ship.y + (dy/dist) * ship.speed, status: 'MOVING' };
             }

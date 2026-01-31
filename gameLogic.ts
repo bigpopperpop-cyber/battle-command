@@ -123,6 +123,7 @@ export const generateInitialState = (
       x: home.x,
       y: home.y,
       currentPlanetId: home.id,
+      targetPlanetId: null,
       cargo: 0,
       maxCargo: stats.cargo,
       cargoPeople: 0,
