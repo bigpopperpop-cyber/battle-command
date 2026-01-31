@@ -14,7 +14,7 @@ interface MapViewProps {
   playerRole?: Owner | null;
 }
 
-const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect, isSettingCourse, combatEvents = [], playerRole }) => {
+const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId, onSelect, isSettingCourse, combatEvents = [], playerRole }) => {
   const [zoom, setZoom] = useState(0.5);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
@@ -23,15 +23,20 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
   const moved = useRef(false);
 
   useEffect(() => {
-    setOffset({ 
-      x: window.innerWidth / 2 - (GRID_SIZE / 2) * zoom, 
-      y: window.innerHeight / 2 - (GRID_SIZE / 2) * zoom 
-    });
+    // Initial centering logic with window check
+    if (typeof window !== 'undefined') {
+      setOffset({ 
+        x: window.innerWidth / 2 - (GRID_SIZE / 2) * 0.5, 
+        y: window.innerHeight / 2 - (GRID_SIZE / 2) * 0.5 
+      });
+    }
   }, []);
 
   const shipDisplayPositions = useMemo(() => {
     const posMap: Record<string, { x: number, y: number }> = {};
     const planetOrbitCounters: Record<string, number> = {};
+
+    if (!ships || !planets) return posMap;
 
     ships.forEach(s => {
       if (s.currentPlanetId && s.status === 'ORBITING') {
@@ -49,7 +54,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           posMap[s.id] = { x: s.x, y: s.y };
         }
       } else {
-        posMap[s.id] = { x: s.x, y: s.y };
+        posMap[s.id] = { x: s.x || 0, y: s.y || 0 };
       }
     });
     return posMap;
@@ -76,6 +81,9 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
+  // Safe fallback if data is missing
+  if (!planets) return null;
+
   return (
     <div 
       className={`w-full h-full relative overflow-hidden bg-[#020617] cursor-grab active:cursor-grabbing touch-none select-none ${isSettingCourse ? 'cursor-crosshair' : ''}`}
@@ -98,10 +106,10 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
         <div className="absolute inset-0 opacity-[0.03] pointer-events-none" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
 
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10">
-          {combatEvents.map(ev => (
-            <line key={ev.id} x1={ev.attackerPos.x} y1={ev.attackerPos.y} x2={ev.targetPos.x} y2={ev.targetPos.y} stroke={ev.color} strokeWidth="3" strokeDasharray="5,5" style={{ animation: 'laser-grow 0.5s infinite' }} />
+          {combatEvents && combatEvents.map(ev => (
+            <line key={ev.id} x1={ev.attackerPos?.x} y1={ev.attackerPos?.y} x2={ev.targetPos?.x} y2={ev.targetPos?.y} stroke={ev.color} strokeWidth="3" strokeDasharray="5,5" style={{ animation: 'laser-grow 0.5s infinite' }} />
           ))}
-          {ships.map(s => {
+          {ships && ships.map(s => {
             if (!s.targetPlanetId) return null;
             const target = planets.find(p => p.id === s.targetPlanetId);
             if (!target) return null;
@@ -138,7 +146,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 </svg>
 
                 <div className={`w-14 h-14 rounded-full border-2 transition-all flex flex-col items-center justify-center ${isSelected ? 'scale-110 border-white shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'border-white/10'}`} style={{ backgroundColor: PLAYER_COLORS[p.owner] }}>
-                  <span className="text-[12px] font-black text-white">{p.name[0]}</span>
+                  <span className="text-[12px] font-black text-white">{p.name?.[0] || '?'}</span>
                 </div>
               </div>
               
@@ -151,7 +159,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           );
         })}
 
-        {ships.map(s => {
+        {ships && ships.map(s => {
           const pos = shipDisplayPositions[s.id] || { x: s.x, y: s.y };
           const isCurrentSelected = selectedId === s.id;
           return (

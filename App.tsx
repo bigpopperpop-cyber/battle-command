@@ -10,7 +10,6 @@ import SelectionPanel from './components/SelectionPanel';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
 import { getDatabase, ref, onValue, set, onDisconnect, Database } from 'firebase/database';
 
-// Centralized Family ID
 const FAMILY_GALAXY_ID = "Command-Center-Alpha";
 
 const firebaseConfig = {
@@ -65,7 +64,9 @@ const App: React.FC = () => {
       const data = snapshot.val();
       if (data) {
         setGameState(data);
-        // If we have data and we've chosen to enter (or are the host), we start
+      } else {
+        setGameState(null);
+        setHasStarted(false);
       }
     });
 
@@ -75,7 +76,7 @@ const App: React.FC = () => {
     };
   }, []);
 
-  const handleIssueOrder = (type: string, payload?: any) => {
+  const handleIssueOrder = useCallback((type: string, payload?: any) => {
     if (!playerRole || !gameState || !db) return;
     
     if (type === 'SET_COURSE') {
@@ -86,7 +87,7 @@ const App: React.FC = () => {
     const nextState = { ...gameState };
     nextState.readyPlayers = (gameState.readyPlayers || []).filter(p => p !== playerRole);
     
-    const selected = gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId);
+    const selected = gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId);
     if (!selected) return;
 
     if (type === 'BUILD_MINE' && 'population' in selected) {
@@ -138,7 +139,7 @@ const App: React.FC = () => {
     }
 
     set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
-  };
+  }, [playerRole, gameState, selectedId]);
 
   const handleSelect = (id: string) => {
     if (!gameState || !db) return;
@@ -262,7 +263,7 @@ const App: React.FC = () => {
     const humans: Owner[] = [];
     for (let i = 1; i <= gameState.playerCount; i++) {
       const p = `P${i}` as Owner;
-      if (!gameState.aiPlayers.includes(p)) humans.push(p);
+      if (!gameState.aiPlayers?.includes(p)) humans.push(p);
     }
     return humans;
   }, [gameState]);
@@ -276,6 +277,10 @@ const App: React.FC = () => {
   if (!hasStarted) return (
     <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg">
       <div className="text-center p-12 glass-card rounded-[4rem] border-cyan-500/20 max-w-lg shadow-2xl relative overflow-hidden">
+        {isProcessing && <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-50 flex flex-col items-center justify-center">
+          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400">Finalizing Sector Link...</p>
+        </div>}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50" />
         <h1 className="text-6xl font-black italic mb-2 leading-none">STELLAR<br/><span className="text-cyan-400">COMMANDER</span></h1>
         <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-500 mb-10">Sector: {FAMILY_GALAXY_ID}</p>
@@ -297,27 +302,43 @@ const App: React.FC = () => {
               Initialize Galaxy
             </button>
           ) : (
-            <button 
-              onClick={() => { setPlayerRole('P2'); setHasStarted(true); }}
-              className="w-full py-6 bg-emerald-600 hover:bg-emerald-500 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-emerald-900/40 transition-all active:scale-95"
-            >
-              Enter Battlezone
-            </button>
+            <div className="space-y-3">
+               <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Active Battlezone Detected</p>
+               <div className="grid grid-cols-2 gap-2">
+                 {Array.from({ length: gameState.playerCount }).map((_, i) => {
+                   const pId = `P${i+1}` as Owner;
+                   if (gameState.aiPlayers?.includes(pId)) return null;
+                   return (
+                     <button 
+                       key={pId}
+                       onClick={() => { setPlayerRole(pId); setHasStarted(true); }}
+                       className="py-5 bg-slate-900 border border-white/10 hover:border-emerald-500/50 hover:bg-emerald-950/20 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
+                     >
+                       Join as {pId}
+                     </button>
+                   );
+                 })}
+               </div>
+            </div>
           )}
         </div>
       </div>
       
-      <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={(pc, ai, names, diff) => {
+      <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={async (pc, ai, names, diff) => {
+        setIsProcessing(true);
         const state = generateInitialState(pc, ai, undefined, names, diff);
         if (db) {
-          // Set Firebase first
-          set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), state).then(() => {
-            // Then update local state to trigger transition
+          try {
+            await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), state);
             setPlayerRole('P1');
             setGameState(state);
             setHasStarted(true);
             setIsNewGameOpen(false);
-          });
+          } catch (e) {
+            console.error(e);
+          } finally {
+            setIsProcessing(false);
+          }
         }
       }} />
     </div>
@@ -356,8 +377,8 @@ const App: React.FC = () => {
       <main className="flex-1 relative">
         {gameState && (
           <MapView 
-            planets={gameState.planets} 
-            ships={gameState.ships} 
+            planets={gameState.planets || []} 
+            ships={gameState.ships || []} 
             selectedId={selectedId} 
             onSelect={handleSelect}
             isSettingCourse={isSettingCourse}
@@ -366,7 +387,7 @@ const App: React.FC = () => {
           />
         )}
         <SelectionPanel 
-          selection={gameState ? gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null : null} 
+          selection={gameState ? (gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId) || null) : null} 
           onClose={() => setSelectedId(null)}
           playerRole={playerRole}
           credits={gameState?.playerCredits[playerRole || 'P1'] || 0}
@@ -377,7 +398,7 @@ const App: React.FC = () => {
         />
         {gameState && <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />}
         {gameState && <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />}
-      </main>
+      </header>
     </div>
   );
 };
