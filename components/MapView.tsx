@@ -15,7 +15,7 @@ interface MapViewProps {
 }
 
 const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId, onSelect, isSettingCourse, combatEvents = [], playerRole }) => {
-  const [zoom, setZoom] = useState(0.5);
+  const [zoom, setZoom] = useState(0.4);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
   const startPos = useRef({ x: 0, y: 0 });
@@ -23,11 +23,13 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
   const moved = useRef(false);
 
   useEffect(() => {
-    // Initial centering logic with window check
     if (typeof window !== 'undefined') {
+      const isMobile = window.innerWidth < 768;
+      const initialZoom = isMobile ? 0.35 : 0.45;
+      setZoom(initialZoom);
       setOffset({ 
-        x: window.innerWidth / 2 - (GRID_SIZE / 2) * 0.5, 
-        y: window.innerHeight / 2 - (GRID_SIZE / 2) * 0.5 
+        x: window.innerWidth / 2 - (GRID_SIZE / 2) * initialZoom, 
+        y: (window.innerHeight / 2 - (GRID_SIZE / 2) * initialZoom) - (isMobile ? 50 : 0)
       });
     }
   }, []);
@@ -72,7 +74,7 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
     if (!isDragging.current) return;
     const dx = e.clientX - startPos.current.x;
     const dy = e.clientY - startPos.current.y;
-    if (Math.abs(dx) > 15 || Math.abs(dy) > 15) moved.current = true;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved.current = true;
     setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy });
   };
 
@@ -81,7 +83,6 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
     (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
-  // Safe fallback if data is missing
   if (!planets) return null;
 
   return (
@@ -113,7 +114,7 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
             if (!s.targetPlanetId) return null;
             const target = planets.find(p => p.id === s.targetPlanetId);
             if (!target) return null;
-            return <line key={`path-${s.id}`} x1={s.x} y1={s.y} x2={target.x} y2={target.y} stroke={PLAYER_COLORS[s.owner]} strokeWidth="1" strokeDasharray="4,4" opacity="0.4" />;
+            return <line key={`path-${s.id}`} x1={s.x} y1={s.y} x2={target.x} y2={target.y} stroke={PLAYER_COLORS[s.owner]} strokeWidth="1" strokeDasharray="4,4" opacity="0.3" />;
           })}
         </svg>
 
@@ -129,11 +130,9 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
               key={p.id}
               onClick={(e) => { 
                 e.stopPropagation(); 
-                if (!moved.current) {
-                  onSelect(p.id);
-                }
+                if (!moved.current) onSelect(p.id);
               }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-16 ${isSettingCourse ? 'z-[100]' : 'z-20'}`}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-24 ${isSettingCourse ? 'z-[100]' : 'z-20'}`}
               style={{ left: p.x, top: p.y }}
             >
               <div className="relative flex items-center justify-center pointer-events-none">
@@ -146,13 +145,13 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
                 </svg>
 
                 <div className={`w-14 h-14 rounded-full border-2 transition-all flex flex-col items-center justify-center ${isSelected ? 'scale-110 border-white shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'border-white/10'}`} style={{ backgroundColor: PLAYER_COLORS[p.owner] }}>
-                  <span className="text-[12px] font-black text-white">{p.name?.[0] || '?'}</span>
+                  <span className="text-sm font-black text-white leading-none">{p.name?.[0] || '?'}</span>
                 </div>
               </div>
               
               <div className={`mt-8 bg-black/90 px-4 py-1.5 rounded-full border border-white/20 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100 ring-2 ring-cyan-500/50' : 'opacity-80'}`}>
-                <span className={`text-[10px] font-black uppercase tracking-widest ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
-                  {isSettingCourse && !isSelected ? `NAV-TARGET: ${p.name}` : p.name}
+                <span className={`text-[10px] font-black uppercase tracking-widest leading-none ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
+                  {p.name}
                 </span>
               </div>
             </div>
@@ -169,25 +168,20 @@ const MapView: React.FC<MapViewProps> = ({ planets = [], ships = [], selectedId,
                 e.stopPropagation(); 
                 if (!moved.current) onSelect(s.id); 
               }} 
-              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? 'pointer-events-none opacity-40' : 'pointer-events-auto'}`} 
+              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-8 z-40 ${isSettingCourse ? 'pointer-events-none opacity-40' : 'pointer-events-auto'}`} 
               style={{ left: pos.x, top: pos.y }}
             >
               <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-all ${isCurrentSelected ? 'scale-150 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)] z-50' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
-                <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
+                <span className="text-[12px] -rotate-45 leading-none">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
-              {!isSettingCourse && (
-                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-full mb-1 opacity-0 hover:opacity-100 transition-opacity bg-black/80 px-2 py-0.5 rounded border border-white/10 pointer-events-none whitespace-nowrap">
-                   <span className="text-[8px] font-bold text-white uppercase">{s.name}</span>
-                </div>
-              )}
             </div>
           );
         })}
       </div>
 
-      <div className="absolute bottom-10 right-10 flex flex-col gap-2 z-50">
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10 active:scale-95">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10 active:scale-95">-</button>
+      <div className="absolute bottom-6 right-6 md:bottom-10 md:right-10 flex flex-col gap-2 z-50">
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.15))} className="w-10 h-10 md:w-12 md:h-12 glass-card rounded-xl md:rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10 active:scale-95">+</button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.15))} className="w-10 h-10 md:w-12 md:h-12 glass-card rounded-xl md:rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10 active:scale-95">-</button>
       </div>
     </div>
   );

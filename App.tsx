@@ -44,7 +44,6 @@ const App: React.FC = () => {
   const [combatEvents, setCombatEvents] = useState<CombatEvent[]>([]);
   const [onlineCommanders, setOnlineCommanders] = useState<number>(0);
 
-  // 1. Presence and Global Sync
   useEffect(() => {
     if (!db) return;
 
@@ -292,31 +291,29 @@ const App: React.FC = () => {
   }, [humanPlayers, gameState]);
 
   if (!hasStarted) return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg">
-      <div className="text-center p-12 glass-card rounded-[4rem] border-cyan-500/20 max-w-lg shadow-2xl relative overflow-hidden">
-        {isProcessing && <div className="absolute inset-0 bg-[#020617]/90 backdrop-blur-xl z-[200] flex flex-col items-center justify-center">
+    <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg overflow-y-auto safe-pt safe-pb p-4">
+      <div className="text-center p-8 md:p-12 glass-card rounded-[3rem] md:rounded-[4rem] border-cyan-500/20 w-full max-w-lg shadow-2xl relative overflow-hidden my-auto">
+        {isProcessing && <div className="absolute inset-0 bg-[#020617]/90 backdrop-blur-xl z-[200] flex flex-col items-center justify-center p-6">
           <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-6" />
-          <p className="text-sm font-black uppercase tracking-[0.3em] text-cyan-400 animate-pulse">Initializing Galactic Core...</p>
-          <p className="text-[9px] text-slate-500 uppercase mt-2">Syncing Subspace Relay Protocols</p>
+          <p className="text-sm font-black uppercase tracking-[0.3em] text-cyan-400 animate-pulse text-center">Initializing Galactic Core...</p>
         </div>}
-        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50" />
-        <h1 className="text-6xl font-black italic mb-2 leading-none">STELLAR<br/><span className="text-cyan-400">COMMANDER</span></h1>
-        <p className="text-[10px] font-black uppercase tracking-[0.5em] text-slate-500 mb-10">Sector: {FAMILY_GALAXY_ID}</p>
+        <h1 className="text-4xl md:text-6xl font-black italic mb-2 leading-none uppercase">Stellar<br/><span className="text-cyan-400">Commander</span></h1>
+        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 mb-8 md:mb-10">Sector: {FAMILY_GALAXY_ID}</p>
         
-        <div className="space-y-6">
-          <div className="bg-slate-900/60 p-5 rounded-3xl border border-white/5">
+        <div className="space-y-4 md:space-y-6">
+          <div className="bg-slate-900/60 p-4 md:p-5 rounded-3xl border border-white/5">
              <div className="flex items-center justify-center gap-3 mb-2">
                 <div className={`w-3 h-3 rounded-full ${onlineCommanders > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
-                <span className="text-sm font-bold">{onlineCommanders} Commanders Online</span>
+                <span className="text-xs md:text-sm font-bold">{onlineCommanders} Commanders Online</span>
              </div>
-             <p className="text-[10px] text-slate-500 uppercase font-black">Waiting for family to sync terminals...</p>
+             <p className="text-[9px] text-slate-500 uppercase font-black">Syncing sub-space terminals...</p>
           </div>
 
           {!gameState ? (
             <div className="space-y-3">
               <button 
                 onClick={() => setIsNewGameOpen(true)} 
-                className="w-full py-6 bg-cyan-600 hover:bg-cyan-500 rounded-3xl font-black text-sm uppercase tracking-widest shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
+                className="w-full py-5 md:py-6 bg-cyan-600 hover:bg-cyan-500 rounded-3xl font-black text-xs md:text-sm uppercase tracking-widest shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
               >
                 Initialize Galaxy
               </button>
@@ -338,19 +335,14 @@ const App: React.FC = () => {
                      <button 
                        key={pId}
                        onClick={() => { setPlayerRole(pId); setHasStarted(true); }}
-                       className="py-5 bg-slate-900 border border-white/10 hover:border-emerald-500/50 hover:bg-emerald-950/20 rounded-2xl font-black text-xs uppercase tracking-widest transition-all active:scale-95"
+                       className="py-4 md:py-5 bg-slate-900 border border-white/10 hover:border-emerald-500/50 hover:bg-emerald-950/20 rounded-2xl font-black text-[10px] md:text-xs uppercase tracking-widest transition-all"
                      >
-                       Join as {pId}
+                       Join {pId}
                      </button>
                    );
                  })}
                </div>
-               <button 
-                onClick={() => setIsHelpOpen(true)}
-                className="w-full py-3 text-slate-500 hover:text-white text-[9px] font-black uppercase tracking-widest transition-all"
-               >
-                View General Instructions
-               </button>
+               <button onClick={() => setIsHelpOpen(true)} className="w-full py-2 text-slate-500 hover:text-white text-[9px] font-black uppercase tracking-widest">View Instructions</button>
             </div>
           )}
         </div>
@@ -366,11 +358,7 @@ const App: React.FC = () => {
           setGameState(state);
           setHasStarted(true);
           setIsNewGameOpen(false);
-        } catch (e) {
-          console.error("Galaxy Build Failed:", e);
-        } finally {
-          setIsProcessing(false);
-        }
+        } catch (e) { console.error(e); } finally { setIsProcessing(false); }
       }} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
@@ -378,49 +366,31 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk'] safe-pt safe-pb">
-      <header className="h-24 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
-        <div className="flex items-center gap-6">
+      <header className="h-20 md:h-24 flex items-center justify-between px-4 md:px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100] shrink-0">
+        <div className="flex items-center gap-2 md:gap-6 max-w-[40%]">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole} COMMAND</span>
-            <span className="text-[9px] font-bold text-slate-500">RND {gameState?.round || 1} // {FAMILY_GALAXY_ID}</span>
+            <span className="text-[9px] md:text-[10px] font-black text-cyan-500 uppercase tracking-widest italic leading-tight truncate">{playerRole} COMMAND</span>
+            <span className="text-[8px] md:text-[9px] font-bold text-slate-500 leading-tight">RND {gameState?.round || 1}</span>
           </div>
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
+          <div className="hidden sm:block w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]" />
         </div>
 
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-1.5 md:gap-4 overflow-hidden">
+           <div className="hidden sm:flex bg-slate-900/80 px-2 md:px-4 py-2 md:py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-[10px] md:text-xs items-center gap-2">💰 {gameState?.playerCredits[playerRole || 'P1'] || 0}</div>
            {playerRole === 'P1' ? (
-             <div className="flex items-center gap-2">
-               <button 
-                 onClick={handleSelfDestruct} 
-                 disabled={isProcessing}
-                 className="px-4 py-3 bg-rose-600/20 hover:bg-rose-600 text-rose-400 hover:text-white border border-rose-500/30 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 disabled:opacity-30"
-               >
-                 💥 Reset Sector
-               </button>
-               <button 
-                 onClick={executeTurn} 
-                 disabled={isProcessing || !allPlayersReady} 
-                 className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest disabled:opacity-30 shadow-lg shadow-emerald-900/40"
-               >
-                 Execute Turn ({humanPlayers.length > 1 ? `${gameState?.readyPlayers?.length || 0}/${humanPlayers.length - 1} Committed` : 'Ready'})
-               </button>
+             <div className="flex items-center gap-1.5">
+               <button onClick={handleSelfDestruct} disabled={isProcessing} className="p-2 md:px-4 md:py-3 bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest whitespace-nowrap">💥 Reset</button>
+               <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-3 md:px-6 py-2 md:py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest whitespace-nowrap shadow-lg">GO</button>
              </div>
            ) : (
-             <button 
-               onClick={() => handleIssueOrder('COMMIT')} 
-               disabled={(gameState?.readyPlayers || []).includes(playerRole!)}
-               className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${(gameState?.readyPlayers || []).includes(playerRole!) ? 'bg-emerald-900/40 text-emerald-500 border border-emerald-500/30' : 'bg-cyan-600 text-white animate-pulse'}`}
-             >
-               {(gameState?.readyPlayers || []).includes(playerRole!) ? 'Orders Committed' : 'Commit Orders'}
-             </button>
+             <button onClick={() => handleIssueOrder('COMMIT')} disabled={(gameState?.readyPlayers || []).includes(playerRole!)} className={`px-3 md:px-6 py-2 md:py-3 rounded-lg md:rounded-xl text-[8px] md:text-[10px] font-black uppercase tracking-widest transition-all ${(gameState?.readyPlayers || []).includes(playerRole!) ? 'bg-emerald-900/40 text-emerald-500' : 'bg-cyan-600 text-white animate-pulse'}`}>{(gameState?.readyPlayers || []).includes(playerRole!) ? 'LOCKED' : 'COMMIT'}</button>
            )}
-           <div className="bg-slate-900/80 px-4 py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-xs flex items-center gap-2">💰 {gameState?.playerCredits[playerRole || 'P1'] || 0}</div>
-           <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5">🤖</button>
-           <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5">📖</button>
+           <button onClick={() => setIsAdvisorOpen(true)} className="w-9 h-9 md:w-12 md:h-12 bg-slate-900 rounded-lg md:rounded-xl flex items-center justify-center border border-white/5 shrink-0">🤖</button>
+           <button onClick={() => setIsHelpOpen(true)} className="w-9 h-9 md:w-12 md:h-12 bg-slate-900 rounded-lg md:rounded-xl flex items-center justify-center border border-white/5 shrink-0">📖</button>
         </div>
       </header>
 
-      <main className="flex-1 relative">
+      <main className="flex-1 relative overflow-hidden">
         {gameState && (
           <MapView 
             planets={gameState.planets || []} 
