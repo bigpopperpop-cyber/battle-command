@@ -117,7 +117,8 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
                           onClick={() => handleSpecialization(spec)}
                           className={`py-3 rounded-xl text-[8px] font-black uppercase border transition-all ${selection.specialization === spec ? 'bg-cyan-600 border-cyan-400 text-white' : 'bg-slate-800 border-white/5 text-slate-400'}`}
                         >
-                          {spec === 'SHIPYARD' ? '⚓' : spec === 'FORTRESS' ? '🛡️' : '🏭'} {spec}
+                          <span className="block text-xs mb-0.5">{spec === 'SHIPYARD' ? '⚓' : spec === 'FORTRESS' ? '🛡️' : '🏭'}</span>
+                          {spec}
                         </button>
                       ))}
                    </div>
@@ -125,17 +126,26 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
 
                 {selection.factories > 0 && (
                   <div className="space-y-2 pt-2">
-                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Shipyard</p>
+                    <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Shipyard Output</p>
                     <div className="grid grid-cols-3 gap-1.5">
-                      {(['SCOUT', 'FREIGHTER', 'WARSHIP'] as ShipType[]).map(type => (
-                        <button 
-                          key={type}
-                          onClick={() => onIssueOrder('BUILD_SHIP', { type })}
-                          className="py-3 bg-white/5 border border-white/10 text-white rounded-xl text-[8px] font-black uppercase"
-                        >
-                          {type}
-                        </button>
-                      ))}
+                      {(['SCOUT', 'FREIGHTER', 'WARSHIP'] as ShipType[]).map(type => {
+                        const baseCost = SHIP_STATS[type].cost;
+                        const shipyardDiscount = (selection as Planet).specialization === 'SHIPYARD' ? 0.25 : 0;
+                        const finalCost = Math.floor(baseCost * (1 - bonuses.discount - shipyardDiscount));
+                        const canAfford = credits >= finalCost;
+                        
+                        return (
+                          <button 
+                            key={type}
+                            disabled={!canAfford}
+                            onClick={() => onIssueOrder('BUILD_SHIP', { type })}
+                            className={`py-2 px-1 border rounded-xl transition-all flex flex-col items-center justify-center ${canAfford ? 'bg-slate-800 border-white/10 hover:bg-slate-700 text-white' : 'bg-slate-900 border-white/5 text-slate-600 opacity-40 cursor-not-allowed'}`}
+                          >
+                            <span className="text-[8px] font-black uppercase tracking-tighter mb-0.5">{type}</span>
+                            <span className={`text-[9px] font-bold ${canAfford ? 'text-amber-400' : 'text-slate-600'}`}>${finalCost}</span>
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
