@@ -8,7 +8,7 @@ import NewGameModal from './components/NewGameModal';
 import HelpModal from './components/HelpModal';
 import SelectionPanel from './components/SelectionPanel';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, onDisconnect, Database } from 'firebase/database';
+import { getDatabase, ref, onValue, set, onDisconnect, Database, off } from 'firebase/database';
 
 const FAMILY_GALAXY_ID = "Command-Center-Alpha";
 
@@ -54,12 +54,13 @@ const App: React.FC = () => {
     set(presenceRef, { active: true, joinedAt: Date.now() });
 
     const playersRef = ref(db, `lobbies/${FAMILY_GALAXY_ID}/players`);
+    const stateRef = ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`);
+
     const unsubPresence = onValue(playersRef, (snap) => {
       const players = snap.val() || {};
       setOnlineCommanders(Object.keys(players).length);
     });
 
-    const stateRef = ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`);
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
@@ -73,6 +74,10 @@ const App: React.FC = () => {
     return () => {
       unsubPresence();
       unsubState();
+      if (db) {
+        off(playersRef);
+        off(stateRef);
+      }
     };
   }, []);
 
@@ -93,19 +98,19 @@ const App: React.FC = () => {
     if (type === 'BUILD_MINE' && 'population' in selected) {
       if (nextState.playerCredits[playerRole] < 500) return;
       nextState.playerCredits[playerRole] -= 500;
-      nextState.planets = gameState.planets.map(p => p.id === selectedId ? { ...p, mines: p.mines + 1 } : p);
+      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, mines: p.mines + 1 } : p);
     } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
       if (nextState.playerCredits[playerRole] < 800) return;
       nextState.playerCredits[playerRole] -= 800;
-      nextState.planets = gameState.planets.map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
+      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
     } else if (type === 'SET_SPECIALIZATION' && 'population' in selected) {
       if (nextState.playerCredits[playerRole] < 1500) return;
       nextState.playerCredits[playerRole] -= 1500;
-      nextState.planets = gameState.planets.map(p => p.id === selectedId ? { ...p, specialization: payload.spec } : p);
+      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, specialization: payload.spec } : p);
     } else if (type === 'BUILD_SHIP' && 'population' in selected) {
        const shipType = payload.type as ShipType;
        const baseStats = SHIP_STATS[shipType];
-       const bonuses = getEmpireBonuses(gameState.planets, playerRole);
+       const bonuses = getEmpireBonuses(gameState.planets || [], playerRole);
        const isShipyard = selected.specialization === 'SHIPYARD';
        const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (isShipyard ? 0.25 : 0)));
 
@@ -131,7 +136,7 @@ const App: React.FC = () => {
           speed: baseStats.speed,
           status: 'ORBITING'
        };
-       nextState.ships = [...gameState.ships, newShip];
+       nextState.ships = [...(gameState.ships || []), newShip];
     } else if (type === 'COMMIT') {
       if (!nextState.readyPlayers.includes(playerRole)) {
         nextState.readyPlayers = [...nextState.readyPlayers, playerRole];
@@ -145,11 +150,11 @@ const App: React.FC = () => {
     if (!gameState || !db) return;
 
     if (isSettingCourse && selectedId) {
-      const selectedShip = gameState.ships.find(s => s.id === selectedId);
-      const targetPlanet = gameState.planets.find(p => p.id === id);
+      const selectedShip = gameState.ships?.find(s => s.id === selectedId);
+      const targetPlanet = gameState.planets?.find(p => p.id === id);
 
       if (selectedShip && targetPlanet) {
-        const nextShips = gameState.ships.map(s => 
+        const nextShips = (gameState.ships || []).map(s => 
           s.id === selectedId 
             ? { ...s, targetPlanetId: id, currentPlanetId: null, status: 'MOVING' as const } 
             : s
@@ -163,7 +168,7 @@ const App: React.FC = () => {
         setIsSettingCourse(false);
         return; 
       }
-      const clickedAnotherShip = gameState.ships.find(s => s.id === id);
+      const clickedAnotherShip = gameState.ships?.find(s => s.id === id);
       if (clickedAnotherShip && id !== selectedId) {
         setSelectedId(id);
         setIsSettingCourse(false);
@@ -182,8 +187,8 @@ const App: React.FC = () => {
     const events: CombatEvent[] = [];
     
     try {
-      let nextPlanets = gameState.planets.map(p => ({...p}));
-      let nextShips = gameState.ships.map(s => ({...s}));
+      let nextPlanets = (gameState.planets || []).map(p => ({...p}));
+      let nextShips = (gameState.ships || []).map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
       nextShips = nextShips.map(ship => {
@@ -277,9 +282,10 @@ const App: React.FC = () => {
   if (!hasStarted) return (
     <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg">
       <div className="text-center p-12 glass-card rounded-[4rem] border-cyan-500/20 max-w-lg shadow-2xl relative overflow-hidden">
-        {isProcessing && <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-50 flex flex-col items-center justify-center">
-          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-[10px] font-black uppercase tracking-widest text-cyan-400">Finalizing Sector Link...</p>
+        {isProcessing && <div className="absolute inset-0 bg-[#020617]/90 backdrop-blur-xl z-[200] flex flex-col items-center justify-center">
+          <div className="w-16 h-16 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-6" />
+          <p className="text-sm font-black uppercase tracking-[0.3em] text-cyan-400 animate-pulse">Initializing Galactic Core...</p>
+          <p className="text-[9px] text-slate-500 uppercase mt-2">Syncing Subspace Relay Protocols</p>
         </div>}
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50" />
         <h1 className="text-6xl font-black italic mb-2 leading-none">STELLAR<br/><span className="text-cyan-400">COMMANDER</span></h1>
@@ -291,7 +297,7 @@ const App: React.FC = () => {
                 <div className={`w-3 h-3 rounded-full ${onlineCommanders > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'}`} />
                 <span className="text-sm font-bold">{onlineCommanders} Commanders Online</span>
              </div>
-             <p className="text-[10px] text-slate-500 uppercase font-black">Syncing Galaxy Data...</p>
+             <p className="text-[10px] text-slate-500 uppercase font-black">Waiting for family to sync terminals...</p>
           </div>
 
           {!gameState ? (
@@ -325,20 +331,19 @@ const App: React.FC = () => {
       </div>
       
       <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={async (pc, ai, names, diff) => {
+        if (!db) return;
         setIsProcessing(true);
         const state = generateInitialState(pc, ai, undefined, names, diff);
-        if (db) {
-          try {
-            await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), state);
-            setPlayerRole('P1');
-            setGameState(state);
-            setHasStarted(true);
-            setIsNewGameOpen(false);
-          } catch (e) {
-            console.error(e);
-          } finally {
-            setIsProcessing(false);
-          }
+        try {
+          await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), state);
+          setPlayerRole('P1');
+          setGameState(state);
+          setHasStarted(true);
+          setIsNewGameOpen(false);
+        } catch (e) {
+          console.error("Galaxy Build Failed:", e);
+        } finally {
+          setIsProcessing(false);
         }
       }} />
     </div>
@@ -398,7 +403,7 @@ const App: React.FC = () => {
         />
         {gameState && <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />}
         {gameState && <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />}
-      </header>
+      </main>
     </div>
   );
 };
