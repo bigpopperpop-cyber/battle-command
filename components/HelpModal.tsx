@@ -91,7 +91,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                    <div className="p-4 bg-red-950/20 border border-red-500/30 rounded-2xl">
                      <h5 className="text-red-400 font-black text-[10px] uppercase mb-1">Tactical Combat</h5>
                      <p className="text-[11px] text-slate-300 leading-relaxed">
-                       Warships automatically engage enemy vessels at the same planet. <span className="text-white font-bold">25 Base Damage</span> + <span className="text-emerald-400 font-bold">0.5 per Factory</span> in your empire.
+                       Vessels automatically engage enemy ships at the same planet. <span className="text-white font-bold">Base Damage (Hull)</span> + <span className="text-emerald-400 font-bold">0.5 per Factory</span> in your empire.
                      </p>
                    </div>
                  </>
@@ -163,7 +163,7 @@ const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose, onOpenInvite, ga
                 <div className="space-y-3">
                    <div className="flex gap-3">
                      <span className="text-xl">⚔️</span>
-                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Warship:</span> Deals damage to 1 enemy ship per turn. Firepower grows with your empire's factory count.</p>
+                     <p className="text-xs text-slate-400"><span className="text-white font-bold">Warship:</span> High-yield combat platform. Firepower grows with your empire's factory count.</p>
                    </div>
                    <div className="flex gap-3">
                      <span className="text-xl">🛡️</span>

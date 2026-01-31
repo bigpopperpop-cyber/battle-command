@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Planet, Ship } from '../types';
 import { GRID_SIZE, PLAYER_COLORS, MAX_FACTORIES } from '../gameLogic';
+import { CombatEvent } from '../App';
 
 interface MapViewProps {
   planets: Planet[];
@@ -9,9 +10,10 @@ interface MapViewProps {
   selectedId: string | null;
   onSelect: (id: string) => void;
   isSettingCourse: boolean;
+  combatEvents?: CombatEvent[];
 }
 
-const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect, isSettingCourse }) => {
+const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect, isSettingCourse, combatEvents = [] }) => {
   const [zoom, setZoom] = useState(0.5);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
@@ -80,6 +82,23 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
       onTouchMove={(e) => handleMove(e.touches[0].clientX, e.touches[0].clientY)}
       onTouchEnd={() => isDragging.current = false}
     >
+      <style>{`
+        @keyframes laser-grow {
+          0% { stroke-dashoffset: 200; opacity: 0; }
+          20% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { stroke-dashoffset: 0; opacity: 0; }
+        }
+        @keyframes combat-impact {
+          0% { transform: scale(0.5); opacity: 1; border-width: 8px; }
+          100% { transform: scale(3); opacity: 0; border-width: 1px; }
+        }
+        @keyframes flash {
+          0%, 100% { opacity: 0; }
+          50% { opacity: 1; }
+        }
+      `}</style>
+
       <div 
         className="absolute transition-transform duration-75"
         style={{ 
@@ -91,6 +110,45 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
       >
         {/* Grid Background */}
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
+
+        {/* Combat Beams and Effects */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-20">
+          {combatEvents.map(ev => (
+            <g key={ev.id}>
+              <line 
+                x1={ev.attackerPos.x} y1={ev.attackerPos.y}
+                x2={ev.targetPos.x} y2={ev.targetPos.y}
+                stroke={ev.color}
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray="10, 190"
+                style={{ 
+                  animation: 'laser-grow 1s ease-out infinite',
+                  filter: `drop-shadow(0 0 8px ${ev.color})` 
+                }}
+              />
+              <circle 
+                cx={ev.attackerPos.x} cy={ev.attackerPos.y} r="10"
+                fill={ev.color}
+                style={{ animation: 'flash 0.5s ease-in-out infinite' }}
+              />
+            </g>
+          ))}
+        </svg>
+
+        {/* Impact Rings */}
+        {combatEvents.map(ev => (
+          <div 
+            key={`${ev.id}-impact`}
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border-4 pointer-events-none"
+            style={{ 
+              left: ev.targetPos.x, 
+              top: ev.targetPos.y, 
+              borderColor: ev.color,
+              animation: 'combat-impact 1.2s ease-out infinite'
+            }}
+          />
+        ))}
 
         {/* Flight Paths */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-40">

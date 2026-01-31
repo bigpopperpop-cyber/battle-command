@@ -26,6 +26,13 @@ try {
   console.error("Relay Initialization Failed:", e);
 }
 
+export interface CombatEvent {
+  id: string;
+  attackerPos: { x: number; y: number };
+  targetPos: { x: number; y: number };
+  color: string;
+}
+
 const App: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [gameId, setGameId] = useState<string | null>(null);
@@ -41,6 +48,7 @@ const App: React.FC = () => {
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingCourse, setIsSettingCourse] = useState(false);
+  const [combatEvents, setCombatEvents] = useState<CombatEvent[]>([]);
 
   // Deep Link Detection
   useEffect(() => {
@@ -67,6 +75,14 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, [gameId]);
+
+  // Sync combat events from Firebase (optional, let's keep it local to host/players turn logic)
+  useEffect(() => {
+    if (combatEvents.length > 0) {
+      const timer = setTimeout(() => setCombatEvents([]), 3500);
+      return () => clearTimeout(timer);
+    }
+  }, [combatEvents]);
 
   const handleIssueOrder = (type: string, payload?: any) => {
     if (!playerRole) return;
@@ -208,8 +224,6 @@ const App: React.FC = () => {
   }, [gameState.playerCount, gameState.aiPlayers]);
 
   const allPlayersReady = useMemo(() => {
-    // Other human players (allies/competitors) must be ready. 
-    // The host (P1) is the one pushing the button, so we don't block them from themselves.
     const others = humanPlayers.filter(p => p !== 'P1');
     return others.every(p => (gameState.readyPlayers || []).includes(p));
   }, [humanPlayers, gameState.readyPlayers]);
@@ -217,6 +231,8 @@ const App: React.FC = () => {
   const executeTurn = async () => {
     if (isProcessing || !allPlayersReady) return;
     setIsProcessing(true);
+    const events: CombatEvent[] = [];
+    
     try {
       let nextPlanets = gameState.planets.map(p => ({...p}));
       let nextShips = gameState.ships.map(s => ({...s}));
@@ -328,13 +344,24 @@ const App: React.FC = () => {
         
         if (owners.length > 1) {
           shipsAtPlanet.forEach(attacker => {
-            if (attacker.type === 'WARSHIP') {
+            // Only ships with attack values can damage others
+            if (attacker.attack > 0) {
               const enemies = shipsAtPlanet.filter(s => s.owner !== attacker.owner);
               if (enemies.length > 0) {
                 const target = enemies[0];
                 const bonuses = getEmpireBonuses(nextPlanets, attacker.owner);
-                const damage = 25 + bonuses.firepowerBonus;
+                // Combat now uses ship base attack + factory bonus
+                const damage = attacker.attack + bonuses.firepowerBonus;
                 damageMap[target.id] = (damageMap[target.id] || 0) + damage;
+                
+                // Track visual combat event
+                events.push({
+                   id: `ev-${attacker.id}-${target.id}-${Date.now()}`,
+                   attackerPos: { x: attacker.x, y: attacker.y },
+                   targetPos: { x: target.x, y: target.y },
+                   color: PLAYER_COLORS[attacker.owner]
+                });
+
                 shipBattled.add(attacker.id);
                 shipBattled.add(target.id);
               }
@@ -372,7 +399,17 @@ const App: React.FC = () => {
         let nextPop = p.population;
         if (invaders.length > 0) {
            let popLoss = invaders.length;
-           // Max Level Shield: 10% chance to save each person
+           
+           // Combat events for orbital bombardment
+           invaders.forEach(inv => {
+             events.push({
+               id: `ev-bombard-${inv.id}-${p.id}-${Date.now()}`,
+               attackerPos: { x: inv.x, y: inv.y },
+               targetPos: { x: p.x, y: p.y },
+               color: PLAYER_COLORS[inv.owner]
+             });
+           });
+
            if (hasDefensiveShield) {
               let saved = 0;
               for(let i=0; i<popLoss; i++) {
@@ -382,7 +419,6 @@ const App: React.FC = () => {
            }
            nextPop = Math.max(0, p.population - popLoss);
         } else {
-           // Industrial Boom: Increase population by 1 instead of 0.2
            const growthRate = hasIndustrialBoom ? 1.0 : 0.2;
            nextPop = Math.min(MAX_PLANET_POPULATION, p.population + growthRate); 
         }
@@ -413,6 +449,8 @@ const App: React.FC = () => {
         playerCredits: nextCredits,
         readyPlayers: [] 
       };
+
+      setCombatEvents(events);
 
       if (db && gameId && !isConfigPlaceholder) {
         await set(ref(db, `games/${gameId}/state`), finalState);
@@ -547,7 +585,8 @@ const App: React.FC = () => {
           ships={gameState.ships} 
           selectedId={selectedId} 
           onSelect={handleSelect}
-          isSettingCourse={isSettingCourse} 
+          isSettingCourse={isSettingCourse}
+          combatEvents={combatEvents}
         />
         
         <SelectionPanel 
