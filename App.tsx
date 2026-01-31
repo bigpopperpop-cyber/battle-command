@@ -17,7 +17,6 @@ const firebaseConfig = {
 };
 
 let db: Database | null = null;
-// Only treat as placeholder if the URL is literally the default template or empty
 const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL === "" || firebaseConfig.databaseURL.includes("REPLACE_WITH");
 
 try {
@@ -40,7 +39,8 @@ const App: React.FC = () => {
   const [playerRole, setPlayerRole] = useState<Owner | null>(null);
   const [viewMode, setViewMode] = useState<'HOST' | 'PLAYER'>('HOST');
   
-  const [gameState, setGameState] = useState<GameState>(() => generateInitialState(2, 0));
+  // Initialize with null to prevent generating a random map locally when joining
+  const [gameState, setGameState] = useState<GameState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
   const [isNewGameOpen, setIsNewGameOpen] = useState(false);
@@ -67,8 +67,8 @@ const App: React.FC = () => {
       setPlayerRole(urlRole);
       setViewMode('PLAYER');
       setHasStarted(true);
-      // Wait for sync to complete before allowing map interaction
       setInitialSyncComplete(false); 
+      // Do NOT generate a state here. Wait for Firebase.
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -93,24 +93,32 @@ const App: React.FC = () => {
   // Sync state from Firebase
   useEffect(() => {
     if (!db || !gameId || isConfigPlaceholder) {
-      if (gameId) setInitialSyncComplete(true); // Treat local as "synced"
+      // If no DB, we just rely on local state if we are host
+      if (gameId && viewMode === 'HOST' && !gameState) {
+        setGameState(generateInitialState(2, 0));
+        setInitialSyncComplete(true);
+      }
       return;
     }
+    
     setIsSyncing(true);
     const stateRef = ref(db, `games/${gameId}/state`);
     const unsubscribe = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
+        console.log("Sector Data Received:", data.seed);
         setGameState(data);
         setIsSyncing(false);
         setInitialSyncComplete(true);
+      } else {
+        console.warn("Searching for Sector Signature...");
       }
     }, (err) => {
       console.error("State Sync Failed:", err);
       setIsSyncing(false);
     });
     return () => unsubscribe();
-  }, [gameId]);
+  }, [gameId, viewMode]);
 
   useEffect(() => {
     if (combatEvents.length > 0) {
@@ -120,94 +128,94 @@ const App: React.FC = () => {
   }, [combatEvents]);
 
   const handleIssueOrder = (type: string, payload?: any) => {
-    if (!playerRole) return;
+    if (!playerRole || !gameState) return;
     
     if (type === 'SET_COURSE') {
       setIsSettingCourse(true);
       return;
     }
 
-    setGameState(prev => {
-      const readyPlayers = (prev.readyPlayers || []).filter(p => p !== playerRole);
-      const nextState = { ...prev, readyPlayers };
-      const selected = prev.planets.find(p => p.id === selectedId) || prev.ships.find(s => s.id === selectedId);
-      
-      if (type === 'BUILD_MINE' && selected && 'population' in selected) {
-        if (nextState.playerCredits[playerRole] < 500) return prev;
-        nextState.playerCredits[playerRole] -= 500;
-        nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, mines: p.mines + 1 } : p);
-      } else if (type === 'BUILD_FACTORY' && selected && 'population' in selected) {
-        if (nextState.playerCredits[playerRole] < 800) return prev;
-        nextState.playerCredits[playerRole] -= 800;
-        nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
-      } else if (type === 'SET_SPECIALIZATION' && selected && 'population' in selected) {
-        if (nextState.playerCredits[playerRole] < 1500) return prev;
-        nextState.playerCredits[playerRole] -= 1500;
-        nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, specialization: payload.spec } : p);
-      } else if (type === 'BUILD_SHIP' && selected && 'population' in selected) {
-         const shipType = payload.type as ShipType;
-         const baseStats = SHIP_STATS[shipType];
-         const bonuses = getEmpireBonuses(prev.planets, playerRole);
-         
-         const isShipyard = selected.specialization === 'SHIPYARD';
-         const specDiscount = isShipyard ? 0.25 : 0;
-         const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - specDiscount));
+    const nextState = { ...gameState };
+    const readyPlayers = (gameState.readyPlayers || []).filter(p => p !== playerRole);
+    nextState.readyPlayers = readyPlayers;
+    
+    const selected = gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId);
+    
+    if (type === 'BUILD_MINE' && selected && 'population' in selected) {
+      if (nextState.playerCredits[playerRole] < 500) return;
+      nextState.playerCredits[playerRole] -= 500;
+      nextState.planets = gameState.planets.map(p => p.id === selectedId ? { ...p, mines: p.mines + 1 } : p);
+    } else if (type === 'BUILD_FACTORY' && selected && 'population' in selected) {
+      if (nextState.playerCredits[playerRole] < 800) return;
+      nextState.playerCredits[playerRole] -= 800;
+      nextState.planets = gameState.planets.map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
+    } else if (type === 'SET_SPECIALIZATION' && selected && 'population' in selected) {
+      if (nextState.playerCredits[playerRole] < 1500) return;
+      nextState.playerCredits[playerRole] -= 1500;
+      nextState.planets = gameState.planets.map(p => p.id === selectedId ? { ...p, specialization: payload.spec } : p);
+    } else if (type === 'BUILD_SHIP' && selected && 'population' in selected) {
+       const shipType = payload.type as ShipType;
+       const baseStats = SHIP_STATS[shipType];
+       const bonuses = getEmpireBonuses(gameState.planets, playerRole);
+       
+       const isShipyard = selected.specialization === 'SHIPYARD';
+       const specDiscount = isShipyard ? 0.25 : 0;
+       const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - specDiscount));
 
-         if (nextState.playerCredits[playerRole] < cost) return prev;
-         nextState.playerCredits[playerRole] -= cost;
-         
-         const boostedHp = Math.floor(baseStats.hp * bonuses.strength);
-         const boostedAtk = Math.floor(baseStats.attack * bonuses.strength);
+       if (nextState.playerCredits[playerRole] < cost) return;
+       nextState.playerCredits[playerRole] -= cost;
+       
+       const boostedHp = Math.floor(baseStats.hp * bonuses.strength);
+       const boostedAtk = Math.floor(baseStats.attack * bonuses.strength);
 
-         const newShip: Ship = {
-            id: `s-${playerRole}-${Date.now()}`,
-            name: `${prev.playerNames[playerRole]} ${shipType}`,
-            type: shipType,
-            owner: playerRole,
-            x: selected.x,
-            y: selected.y,
-            currentPlanetId: selected.id,
-            cargo: 0,
-            maxCargo: baseStats.cargo,
-            cargoPeople: 0,
-            maxPeopleCargo: shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people,
-            hp: boostedHp,
-            maxHp: boostedHp,
-            attack: boostedAtk,
-            speed: baseStats.speed,
-            status: 'ORBITING'
-         };
-         nextState.ships = [...prev.ships, newShip];
-      }
+       const newShip: Ship = {
+          id: `s-${playerRole}-${Date.now()}`,
+          name: `${gameState.playerNames[playerRole]} ${shipType}`,
+          type: shipType,
+          owner: playerRole,
+          x: selected.x,
+          y: selected.y,
+          currentPlanetId: selected.id,
+          cargo: 0,
+          maxCargo: baseStats.cargo,
+          cargoPeople: 0,
+          maxPeopleCargo: shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people,
+          hp: boostedHp,
+          maxHp: boostedHp,
+          attack: boostedAtk,
+          speed: baseStats.speed,
+          status: 'ORBITING'
+       };
+       nextState.ships = [...gameState.ships, newShip];
+    }
 
-      if (db && gameId && !isConfigPlaceholder) {
-        set(ref(db, `games/${gameId}/state`), nextState);
-      }
-      return nextState;
-    });
+    if (db && gameId && !isConfigPlaceholder) {
+      set(ref(db, `games/${gameId}/state`), nextState);
+    } else {
+      setGameState(nextState);
+    }
   };
 
   const handleSelect = (id: string) => {
-    if (!initialSyncComplete) return;
+    if (!initialSyncComplete || !gameState) return;
 
     if (isSettingCourse && selectedId) {
       const selectedShip = gameState.ships.find(s => s.id === selectedId);
       const targetPlanet = gameState.planets.find(p => p.id === id);
 
       if (selectedShip && targetPlanet) {
-        setGameState(prev => {
-          const nextShips = prev.ships.map(s => 
-            s.id === selectedId 
-              ? { ...s, targetPlanetId: id, currentPlanetId: undefined, status: 'MOVING' as const } 
-              : s
-          );
-          const nextState = { ...prev, ships: nextShips };
-          
-          if (db && gameId && !isConfigPlaceholder) {
-            set(ref(db, `games/${gameId}/state`), nextState);
-          }
-          return nextState;
-        });
+        const nextShips = gameState.ships.map(s => 
+          s.id === selectedId 
+            ? { ...s, targetPlanetId: id, currentPlanetId: undefined, status: 'MOVING' as const } 
+            : s
+        );
+        const nextState = { ...gameState, ships: nextShips };
+        
+        if (db && gameId && !isConfigPlaceholder) {
+          set(ref(db, `games/${gameId}/state`), nextState);
+        } else {
+          setGameState(nextState);
+        }
         setIsSettingCourse(false);
         return;
       }
@@ -218,7 +226,7 @@ const App: React.FC = () => {
   };
 
   const executeTurn = async () => {
-    if (isProcessing || !allPlayersReady) return;
+    if (isProcessing || !allPlayersReady || !gameState) return;
     setIsProcessing(true);
     const events: CombatEvent[] = [];
     
@@ -322,7 +330,6 @@ const App: React.FC = () => {
       setCombatEvents(events);
       if (db && gameId && !isConfigPlaceholder) {
         await set(ref(db, `games/${gameId}/state`), finalState);
-        // Update lobby metadata to show turn progression
         await set(ref(db, `lobby/${gameId}`), {
           id: gameId,
           round: finalState.round,
@@ -336,7 +343,7 @@ const App: React.FC = () => {
   };
 
   const visibleShips = useMemo(() => {
-    if (!playerRole) return gameState.ships;
+    if (!gameState || !playerRole) return gameState?.ships || [];
     const myPlanetsIds = new Set(gameState.planets.filter(p => p.owner === playerRole).map(p => p.id));
     const myShipPlanetIds = new Set(gameState.ships.filter(s => s.owner === playerRole).map(s => s.currentPlanetId).filter(Boolean));
 
@@ -346,18 +353,27 @@ const App: React.FC = () => {
       if (s.currentPlanetId && myShipPlanetIds.has(s.currentPlanetId)) return true;
       return false;
     });
-  }, [gameState.ships, gameState.planets, playerRole]);
+  }, [gameState, playerRole]);
 
-  const selectedObject = useMemo(() => gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null, [selectedId, gameState]);
+  const selectedObject = useMemo(() => {
+    if (!gameState) return null;
+    return gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null;
+  }, [selectedId, gameState]);
+
   const humanPlayers = useMemo(() => {
+    if (!gameState) return [];
     const humans: Owner[] = [];
     for (let i = 1; i <= gameState.playerCount; i++) {
       const p = `P${i}` as Owner;
       if (!gameState.aiPlayers.includes(p)) humans.push(p);
     }
     return humans;
-  }, [gameState.playerCount, gameState.aiPlayers]);
-  const allPlayersReady = useMemo(() => humanPlayers.filter(p => p !== 'P1').every(p => (gameState.readyPlayers || []).includes(p)), [humanPlayers, gameState.readyPlayers]);
+  }, [gameState]);
+
+  const allPlayersReady = useMemo(() => {
+    if (!gameState) return false;
+    return humanPlayers.filter(p => p !== 'P1').every(p => (gameState.readyPlayers || []).includes(p));
+  }, [humanPlayers, gameState]);
 
   if (!hasStarted) return (
     <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg">
@@ -406,6 +422,7 @@ const App: React.FC = () => {
         setHasStarted(true);
         setIsLobbyOpen(false);
         setInitialSyncComplete(false);
+        // Do NOT generate a local state. Wait for the sync from Firebase.
       }} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
@@ -413,7 +430,7 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk'] safe-pt safe-pb">
-      {!initialSyncComplete && viewMode === 'PLAYER' && (
+      {(!initialSyncComplete || !gameState) && viewMode === 'PLAYER' && (
         <div className="fixed inset-0 z-[2000] bg-black/90 backdrop-blur-3xl flex flex-col items-center justify-center">
            <div className="w-24 h-24 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-8" />
            <h2 className="text-2xl font-black italic text-cyan-500 uppercase tracking-widest">Establishing Bridge Link...</h2>
@@ -421,7 +438,7 @@ const App: React.FC = () => {
         </div>
       )}
 
-      {gameState.winner && (
+      {gameState?.winner && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-2xl animate-in fade-in duration-1000">
            <div className="text-center">
              <h1 className="text-6xl font-black text-white italic tracking-tighter mb-4">SECTOR CONQUERED</h1>
@@ -436,7 +453,7 @@ const App: React.FC = () => {
           <div className="flex flex-col">
             <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole} HQ</span>
             <div className="flex items-center gap-2">
-              <span className="text-[9px] font-bold text-slate-500">RND {gameState.round}</span>
+              <span className="text-[9px] font-bold text-slate-500">RND {gameState?.round || 1}</span>
               <div className="flex items-center gap-1 bg-slate-900/50 px-2 py-0.5 rounded-full border border-white/5">
                  <div className={`w-1.5 h-1.5 rounded-full ${isRelayOnline ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-red-500 animate-pulse'}`} />
                  <span className={`text-[7px] font-black uppercase ${isRelayOnline ? 'text-emerald-500/70' : 'text-red-500'}`}>
@@ -448,7 +465,7 @@ const App: React.FC = () => {
           <div className="w-32 h-1 bg-slate-900 rounded-full overflow-hidden hidden md:block">
             <div 
               className="h-full bg-cyan-500 transition-all duration-1000" 
-              style={{ width: `${(gameState.planets.filter(p => p.owner === playerRole).length / PLANET_COUNT) * 100}%` }} 
+              style={{ width: `${((gameState?.planets.filter(p => p.owner === playerRole).length || 0) / PLANET_COUNT) * 100}%` }} 
             />
           </div>
         </div>
@@ -467,35 +484,37 @@ const App: React.FC = () => {
                )}
              </div>
            )}
-           <div className="bg-slate-900/80 px-4 py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-xs flex items-center gap-2">💰 {gameState.playerCredits[playerRole || 'P1']}</div>
+           <div className="bg-slate-900/80 px-4 py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-xs flex items-center gap-2">💰 {gameState?.playerCredits[playerRole || 'P1'] || 0}</div>
            <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5 text-xl">🤖</button>
            <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5 text-xl">❓</button>
         </div>
       </header>
 
       <main className="flex-1 relative">
-        <MapView 
-          planets={gameState.planets} 
-          ships={visibleShips} 
-          selectedId={selectedId} 
-          onSelect={handleSelect}
-          isSettingCourse={isSettingCourse}
-          combatEvents={combatEvents}
-          playerRole={playerRole}
-        />
+        {gameState && (
+          <MapView 
+            planets={gameState.planets} 
+            ships={visibleShips} 
+            selectedId={selectedId} 
+            onSelect={handleSelect}
+            isSettingCourse={isSettingCourse}
+            combatEvents={combatEvents}
+            playerRole={playerRole}
+          />
+        )}
         <SelectionPanel 
           selection={selectedObject} 
           onClose={() => setSelectedId(null)}
           playerRole={playerRole}
-          credits={gameState.playerCredits[playerRole || 'P1']}
+          credits={gameState?.playerCredits[playerRole || 'P1'] || 0}
           onIssueOrder={handleIssueOrder}
           isSettingCourse={isSettingCourse}
-          ships={gameState.ships}
-          planets={gameState.planets}
+          ships={gameState?.ships || []}
+          planets={gameState?.planets || []}
         />
-        <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
-        <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
-        {gameId && (
+        {gameState && <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />}
+        {gameState && <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />}
+        {gameId && gameState && (
           <InviteModal 
             isOpen={isInviteOpen} 
             onClose={() => setIsInviteOpen(false)} 
