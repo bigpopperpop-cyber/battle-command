@@ -1,6 +1,7 @@
 
 export type Owner = 'P1' | 'P2' | 'P3' | 'P4' | 'P5' | 'P6' | 'P7' | 'P8' | 'NEUTRAL';
 export type AiDifficulty = 'EASY' | 'ADVANCED';
+export type PlanetSpecialization = 'NONE' | 'SHIPYARD' | 'FORTRESS' | 'INDUSTRIAL';
 
 export interface Planet {
   id: string;
@@ -12,9 +13,10 @@ export interface Planet {
   resources: number; 
   factories: number;
   mines: number;
-  batteries: number; // New: Defense system
+  batteries: number;
   defense: number; 
   maxDefense: number;
+  specialization: PlanetSpecialization; // New: Planet roles
 }
 
 export type ShipType = 'SCOUT' | 'FREIGHTER' | 'WARSHIP';
@@ -54,5 +56,5 @@ export interface GameState {
   readyPlayers: Owner[]; 
   logs: string[];
   isHost?: boolean;
-  winner?: Owner | null; // New: Victory tracking
+  winner?: Owner | null;
 }

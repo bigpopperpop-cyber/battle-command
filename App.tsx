@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { GameState, Owner, AiDifficulty, Planet, Ship, ShipType } from './types';
-// Fixed: Added PLANET_COUNT to imports
+import { GameState, Owner, AiDifficulty, Planet, Ship, ShipType, PlanetSpecialization } from './types';
 import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE, getEmpireBonuses, MAX_FACTORIES, MAX_MINES, MAX_BATTERIES, PLANET_COUNT } from './gameLogic';
 import MapView from './components/MapView';
 import AdvisorPanel from './components/AdvisorPanel';
@@ -105,22 +104,25 @@ const App: React.FC = () => {
         if (nextState.playerCredits[playerRole] < 800) return prev;
         nextState.playerCredits[playerRole] -= 800;
         nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
-      } else if (type === 'BUILD_BATTERY' && selected && 'population' in selected) {
-        if (nextState.playerCredits[playerRole] < 1200) return prev;
-        nextState.playerCredits[playerRole] -= 1200;
-        nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, batteries: p.batteries + 1 } : p);
+      } else if (type === 'SET_SPECIALIZATION' && selected && 'population' in selected) {
+        if (nextState.playerCredits[playerRole] < 1500) return prev;
+        nextState.playerCredits[playerRole] -= 1500;
+        nextState.planets = prev.planets.map(p => p.id === selectedId ? { ...p, specialization: payload.spec } : p);
       } else if (type === 'BUILD_SHIP' && selected && 'population' in selected) {
          const shipType = payload.type as ShipType;
          const baseStats = SHIP_STATS[shipType];
          const bonuses = getEmpireBonuses(prev.planets, playerRole);
-         const cost = Math.floor(baseStats.cost * (1 - bonuses.discount));
+         
+         // Spec bonus: SHIPYARD makes ships 25% cheaper at that specific planet
+         const isShipyard = selected.specialization === 'SHIPYARD';
+         const specDiscount = isShipyard ? 0.25 : 0;
+         const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - specDiscount));
 
          if (nextState.playerCredits[playerRole] < cost) return prev;
          nextState.playerCredits[playerRole] -= cost;
          
          const boostedHp = Math.floor(baseStats.hp * bonuses.strength);
          const boostedAtk = Math.floor(baseStats.attack * bonuses.strength);
-         const peopleCapacity = shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people;
 
          const newShip: Ship = {
             id: `s-${playerRole}-${Date.now()}`,
@@ -133,7 +135,7 @@ const App: React.FC = () => {
             cargo: 0,
             maxCargo: baseStats.cargo,
             cargoPeople: 0,
-            maxPeopleCargo: peopleCapacity,
+            maxPeopleCargo: shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people,
             hp: boostedHp,
             maxHp: boostedHp,
             attack: boostedAtk,
@@ -160,7 +162,6 @@ const App: React.FC = () => {
       let nextShips = gameState.ships.map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
 
-      // Movement
       nextShips = nextShips.map(ship => {
         if (ship.targetPlanetId) {
           const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
@@ -178,19 +179,17 @@ const App: React.FC = () => {
         return ship;
       });
 
-      // Combat logic including Batteries
       const damageMap: Record<string, number> = {};
       nextPlanets.forEach(planet => {
         const shipsAtPlanet = nextShips.filter(s => s.currentPlanetId === planet.id && s.status === 'ORBITING');
         
-        // 1. Planetary Batteries vs Hostiles
-        if (planet.owner !== 'NEUTRAL' && planet.batteries > 0) {
+        if (planet.owner !== 'NEUTRAL') {
            const invaders = shipsAtPlanet.filter(s => s.owner !== planet.owner);
-           if (invaders.length > 0) {
+           if (invaders.length > 0 && planet.batteries > 0) {
               const target = invaders[Math.floor(Math.random() * invaders.length)];
-              const batteryDamage = planet.batteries * 40;
+              // Spec bonus: FORTRESS batteries are 2x stronger
+              const batteryDamage = planet.batteries * 40 * (planet.specialization === 'FORTRESS' ? 2 : 1);
               damageMap[target.id] = (damageMap[target.id] || 0) + batteryDamage;
-              
               events.push({
                 id: `bat-${planet.id}-${target.id}`,
                 attackerPos: { x: planet.x, y: planet.y },
@@ -200,7 +199,6 @@ const App: React.FC = () => {
            }
         }
 
-        // 2. Ships vs Ships
         const owners = Array.from(new Set(shipsAtPlanet.map(s => s.owner)));
         if (owners.length > 1) {
           shipsAtPlanet.forEach(attacker => {
@@ -228,7 +226,6 @@ const App: React.FC = () => {
         return s;
       }).filter(s => s.hp > 0);
 
-      // Economy and Planet Growth
       nextPlanets = nextPlanets.map(p => {
         if (p.owner === 'NEUTRAL') {
           const colonist = nextShips.find(s => s.currentPlanetId === p.id && s.type === 'FREIGHTER');
@@ -240,7 +237,9 @@ const App: React.FC = () => {
         if (invaders.length > 0) {
           nextPop = Math.max(0, p.population - (invaders.length * 0.5));
         } else {
-          nextPop = Math.min(MAX_PLANET_POPULATION, p.population + 0.2);
+          // Spec bonus: INDUSTRIAL growth is 50% faster
+          const growthBase = p.specialization === 'INDUSTRIAL' ? 0.3 : 0.2;
+          nextPop = Math.min(MAX_PLANET_POPULATION, p.population + growthBase);
         }
 
         const income = (p.mines * 50) + (p.factories * 20) + (Math.floor(nextPop) * 50);
@@ -249,9 +248,7 @@ const App: React.FC = () => {
         return { ...p, population: nextPop, owner: nextPop <= 0 && invaders.length > 0 ? invaders[0].owner : p.owner };
       });
 
-      // Check Victory Condition (60% of planets)
       let winner: Owner | null = null;
-      // Fixed: Explicitly cast to Owner[] and added PLANET_COUNT for calculation
       const ownersList = Array.from(new Set(nextPlanets.filter(p => p.owner !== 'NEUTRAL').map(p => p.owner))) as Owner[];
       ownersList.forEach(o => {
         const owned = nextPlanets.filter(p => p.owner === o).length;
@@ -265,7 +262,6 @@ const App: React.FC = () => {
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
   };
 
-  // --- Fog of War filtering ---
   const visibleShips = useMemo(() => {
     if (!playerRole) return gameState.ships;
     const myPlanetsIds = new Set(gameState.planets.filter(p => p.owner === playerRole).map(p => p.id));
@@ -273,17 +269,13 @@ const App: React.FC = () => {
 
     return gameState.ships.filter(s => {
       if (s.owner === playerRole) return true;
-      // Revealed if orbiting my planet
       if (s.currentPlanetId && myPlanetsIds.has(s.currentPlanetId)) return true;
-      // Revealed if at same planet as my ship
       if (s.currentPlanetId && myShipPlanetIds.has(s.currentPlanetId)) return true;
-      // Scout ships could have a radius check here too
       return false;
     });
   }, [gameState.ships, gameState.planets, playerRole]);
 
   const selectedObject = useMemo(() => gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null, [selectedId, gameState]);
-  const handleReadyToggle = () => { /* Logic already exists in standard component */ };
   const humanPlayers = useMemo(() => {
     const humans: Owner[] = [];
     for (let i = 1; i <= gameState.playerCount; i++) {
@@ -295,48 +287,38 @@ const App: React.FC = () => {
   const allPlayersReady = useMemo(() => humanPlayers.filter(p => p !== 'P1').every(p => (gameState.readyPlayers || []).includes(p)), [humanPlayers, gameState.readyPlayers]);
 
   if (!hasStarted) return (
-    <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white">
-      <div className="text-center p-10 glass-card rounded-[3rem] border-cyan-500/20 max-w-lg shadow-2xl">
-        <h1 className="text-5xl font-black italic tracking-tighter mb-4">STELLAR<br/>COMMANDER</h1>
-        <p className="text-[10px] font-black text-cyan-400 uppercase tracking-[0.5em] mb-12">Galactic Hegemony Engine</p>
+    <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg">
+      <div className="text-center p-10 glass-card rounded-[3rem] border-cyan-500/20 max-w-lg shadow-2xl animate-in fade-in zoom-in duration-700">
+        <h1 className="text-6xl font-black italic tracking-tighter mb-4 leading-none">STELLAR<br/><span className="text-cyan-400">COMMANDER</span></h1>
+        <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] mb-12">Universal Strategic Matrix</p>
         <div className="space-y-4">
           <button 
             onClick={() => setIsNewGameOpen(true)}
             className="w-full py-5 bg-cyan-600 hover:bg-cyan-500 rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-cyan-900/40 transition-all active:scale-95"
           >
-            Initiate New Sector
+            Initiate Sector
           </button>
           <button 
             onClick={() => setIsLobbyOpen(true)}
             className="w-full py-5 bg-slate-900 border border-white/5 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all active:scale-95"
           >
-            Connect to Uplink
-          </button>
-          <button 
-            onClick={() => setIsHelpOpen(true)}
-            className="w-full py-4 text-slate-500 hover:text-white text-[10px] font-black uppercase tracking-widest"
-          >
-            Tactical Handbook
+            Sync Terminal
           </button>
         </div>
       </div>
-      <NewGameModal 
-        isOpen={isNewGameOpen} 
-        onClose={() => setIsNewGameOpen(false)} 
-        onConfirm={(pc, ai, names, diff) => {
-          const state = generateInitialState(pc, ai, undefined, names, diff);
-          setGameState(state);
-          setPlayerRole('P1');
-          setViewMode('HOST');
-          setHasStarted(true);
-          setIsNewGameOpen(false);
-          if (db && !isConfigPlaceholder) {
-            const newFreq = Math.floor(100 + Math.random() * 899).toString();
-            setGameId(newFreq);
-            set(ref(db, `games/${newFreq}/state`), state);
-          }
-        }} 
-      />
+      <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={(pc, ai, names, diff) => {
+        const state = generateInitialState(pc, ai, undefined, names, diff);
+        setGameState(state);
+        setPlayerRole('P1');
+        setViewMode('HOST');
+        setHasStarted(true);
+        setIsNewGameOpen(false);
+        if (db && !isConfigPlaceholder) {
+          const newFreq = Math.floor(100 + Math.random() * 899).toString();
+          setGameId(newFreq);
+          set(ref(db, `games/${newFreq}/state`), state);
+        }
+      }} />
       <LobbyModal isOpen={isLobbyOpen} onClose={() => setIsLobbyOpen(false)} db={db} onJoin={(id, role) => {
         setGameId(id);
         setPlayerRole(role);
@@ -353,23 +335,22 @@ const App: React.FC = () => {
       {gameState.winner && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-2xl animate-in fade-in duration-1000">
            <div className="text-center">
-             <h1 className="text-6xl font-black text-white italic tracking-tighter mb-4">HEGEMONY ACHIEVED</h1>
-             <p className="text-2xl font-bold text-cyan-400 uppercase tracking-[0.5em]">{gameState.playerNames[gameState.winner]} Dominates the Sector</p>
-             <button onClick={() => window.location.reload()} className="mt-12 px-10 py-4 bg-cyan-600 text-white font-black rounded-2xl">Return to Command</button>
+             <h1 className="text-6xl font-black text-white italic tracking-tighter mb-4">SECTOR CONQUERED</h1>
+             <p className="text-2xl font-bold text-cyan-400 uppercase tracking-[0.5em]">{gameState.playerNames[gameState.winner]}</p>
+             <button onClick={() => window.location.reload()} className="mt-12 px-10 py-4 bg-cyan-600 text-white font-black rounded-2xl">Return to Core</button>
            </div>
         </div>
       )}
       
-      <header className="h-16 md:h-20 flex items-center justify-between px-4 md:px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
-        <div className="flex items-center gap-3">
+      <header className="h-20 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
+        <div className="flex items-center gap-4">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole} Command</span>
-            <span className="text-[9px] font-bold text-slate-500">ROUND {gameState.round}</span>
+            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole} HQ</span>
+            <span className="text-[9px] font-bold text-slate-500">RND {gameState.round}</span>
           </div>
-          <div className="w-48 h-1 bg-slate-900 rounded-full overflow-hidden ml-6 hidden lg:block">
+          <div className="w-32 h-1 bg-slate-900 rounded-full overflow-hidden hidden md:block">
             <div 
               className="h-full bg-cyan-500 transition-all duration-1000" 
-              // Fixed: Added PLANET_COUNT for progress bar calculation
               style={{ width: `${(gameState.planets.filter(p => p.owner === playerRole).length / PLANET_COUNT) * 100}%` }} 
             />
           </div>
@@ -377,14 +358,13 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-4">
            {viewMode === 'HOST' ? (
-             <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-6 py-2.5 bg-emerald-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Execute Turn</button>
+             <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30">Execute Turn</button>
            ) : (
-             <button className="px-6 py-2.5 bg-cyan-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Submit Orders</button>
+             <button className="px-6 py-3 bg-cyan-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Orders Locked</button>
            )}
-           <div className="bg-slate-900 px-4 py-2 rounded-xl text-amber-500 font-bold text-xs">💰 {gameState.playerCredits[playerRole || 'P1']}</div>
-           <button onClick={() => setIsAdvisorOpen(true)} className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5">🤖</button>
-           <button onClick={() => setIsHelpOpen(true)} className="w-10 h-10 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5">❓</button>
-           {viewMode === 'HOST' && <button onClick={() => setIsInviteOpen(true)} className="w-10 h-10 bg-cyan-600 rounded-xl flex items-center justify-center">📡</button>}
+           <div className="bg-slate-900/80 px-4 py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-xs flex items-center gap-2">💰 {gameState.playerCredits[playerRole || 'P1']}</div>
+           <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5 text-xl">🤖</button>
+           <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5 text-xl">❓</button>
         </div>
       </header>
 
@@ -408,7 +388,6 @@ const App: React.FC = () => {
           planets={gameState.planets}
         />
         <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
-        {isInviteOpen && gameId && <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} frequency={gameId} gameState={gameState} />}
         <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
       </main>
     </div>

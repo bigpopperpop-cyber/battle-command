@@ -1,5 +1,5 @@
 
-import { Planet, Ship, GameState, Owner, ShipType, AiDifficulty } from './types';
+import { Planet, Ship, GameState, Owner, ShipType, AiDifficulty, PlanetSpecialization } from './types';
 
 export const GRID_SIZE = 1200;
 export const PLANET_COUNT = 24;
@@ -7,7 +7,7 @@ export const MIN_PLANET_DISTANCE = 180;
 export const MAX_PLANET_POPULATION = 5;
 export const MAX_FACTORIES = 5;
 export const MAX_MINES = 10;
-export const MAX_BATTERIES = 5; // New: Planetary defense limit
+export const MAX_BATTERIES = 5;
 
 const PLANET_NAMES = [
   "Rigel VII", "Betelgeuse Prime", "Delta Pavonis", "Alpha Centauri", "Sol", 
@@ -32,17 +32,6 @@ export const SHIP_STATS = {
   SCOUT: { speed: 180, hp: 100, attack: 0, cargo: 20, people: 0, cost: 300 },
   FREIGHTER: { speed: 60, hp: 500, attack: 15, cargo: 1000, people: 2, cost: 600 },
   WARSHIP: { speed: 100, hp: 1000, attack: 125, cargo: 80, people: 0, cost: 1500 }
-};
-
-export const SHIP_SPEEDS = { 
-  SCOUT: SHIP_STATS.SCOUT.speed, 
-  FREIGHTER: SHIP_STATS.FREIGHTER.speed, 
-  WARSHIP: SHIP_STATS.WARSHIP.speed 
-};
-export const SHIP_COSTS = { 
-  SCOUT: SHIP_STATS.SCOUT.cost, 
-  FREIGHTER: SHIP_STATS.FREIGHTER.cost, 
-  WARSHIP: SHIP_STATS.WARSHIP.cost 
 };
 
 export const getEmpireBonuses = (planets: Planet[], owner: Owner) => {
@@ -107,6 +96,7 @@ export const generateInitialState = (
       batteries: owner !== 'NEUTRAL' ? 1 : 0,
       defense: maxDef,
       maxDefense: maxDef,
+      specialization: 'NONE'
     });
   }
 

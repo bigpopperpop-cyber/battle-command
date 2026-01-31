@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Planet, Ship } from '../types';
-import { GRID_SIZE, PLAYER_COLORS, MAX_FACTORIES } from '../gameLogic';
+import { GRID_SIZE, PLAYER_COLORS, MAX_FACTORIES, MAX_PLANET_POPULATION } from '../gameLogic';
 import { CombatEvent } from '../App';
 
 interface MapViewProps {
@@ -28,7 +28,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     });
   }, []);
 
-  // Calculate display positions for ships so they don't stack
   const shipDisplayPositions = useMemo(() => {
     const posMap: Record<string, { x: number, y: number }> = {};
     const planetOrbitCounters: Record<string, number> = {};
@@ -38,8 +37,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
         const planet = planets.find(p => p.id === s.currentPlanetId);
         if (planet) {
           const count = planetOrbitCounters[s.currentPlanetId] || 0;
-          const orbitRadius = 55; // Distance from planet center
-          // Distribute ships in 45-degree increments
+          const orbitRadius = 65; 
           const angle = (count * 45) * (Math.PI / 180); 
           posMap[s.id] = {
             x: planet.x + Math.cos(angle) * orbitRadius,
@@ -50,7 +48,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           posMap[s.id] = { x: s.x, y: s.y };
         }
       } else {
-        // Moving ships use their actual coordinate
         posMap[s.id] = { x: s.x, y: s.y };
       }
     });
@@ -99,17 +96,12 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           50% { transform: translate(-48%, -52%) rotate(-2deg); }
           75% { transform: translate(-51%, -49%) rotate(1deg); }
         }
-        @keyframes spark-fly {
-          0% { transform: translate(0, 0) scale(1); opacity: 1; }
-          100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+        @keyframes vector-move {
+          to { stroke-dashoffset: -20; }
         }
-        @keyframes muzzle-pop {
-          0% { transform: scale(0); opacity: 1; }
-          100% { transform: scale(2); opacity: 0; }
-        }
-        @keyframes shield-flare {
-          0%, 100% { filter: brightness(1); }
-          50% { filter: brightness(3) drop-shadow(0 0 15px cyan); }
+        @keyframes pulse-influence {
+          0%, 100% { transform: scale(1); opacity: 0.1; }
+          50% { transform: scale(1.05); opacity: 0.15; }
         }
       `}</style>
 
@@ -122,83 +114,47 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           transformOrigin: '0 0'
         }}
       >
-        {/* Grid Background */}
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
 
-        {/* Filters */}
-        <svg className="hidden">
-          <defs>
-            <filter id="bloom">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
-        </svg>
+        {/* Influence Bubbles */}
+        {planets.map(p => {
+          if (p.owner === 'NEUTRAL') return null;
+          const radius = 100 + p.population * 20;
+          return (
+            <div 
+              key={`inf-${p.id}`}
+              className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full pointer-events-none"
+              style={{ 
+                left: p.x, top: p.y, 
+                width: radius * 2, height: radius * 2,
+                backgroundColor: PLAYER_COLORS[p.owner],
+                opacity: 0.1,
+                animation: 'pulse-influence 5s ease-in-out infinite',
+                filter: 'blur(30px)'
+              }}
+            />
+          );
+        })}
 
         {/* Combat Beams and Effects */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-30" style={{ filter: 'url(#bloom)' }}>
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
           {combatEvents.map(ev => (
             <g key={ev.id}>
-              {/* Core Laser */}
-              <line 
-                x1={ev.attackerPos.x} y1={ev.attackerPos.y}
-                x2={ev.targetPos.x} y2={ev.targetPos.y}
-                stroke="#fff"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeDasharray="20, 220"
-                style={{ animation: 'laser-grow 0.6s ease-out infinite' }}
-              />
-              {/* Outer Energy Beam */}
               <line 
                 x1={ev.attackerPos.x} y1={ev.attackerPos.y}
                 x2={ev.targetPos.x} y2={ev.targetPos.y}
                 stroke={ev.color}
-                strokeWidth="6"
+                strokeWidth="4"
                 strokeLinecap="round"
-                strokeDasharray="20, 220"
+                strokeDasharray="10, 20"
                 style={{ animation: 'laser-grow 0.6s ease-out infinite' }}
               />
-              {/* Muzzle Flash */}
-              <circle 
-                cx={ev.attackerPos.x} cy={ev.attackerPos.y} r="8"
-                fill={ev.color}
-                style={{ animation: 'muzzle-pop 0.3s ease-out infinite' }}
-              />
-              {/* Impact Sparks */}
-              {[...Array(5)].map((_, i) => (
-                <circle 
-                  key={i}
-                  cx={ev.targetPos.x} cy={ev.targetPos.y} r="2"
-                  fill="#fff"
-                  style={{ 
-                    animation: 'spark-fly 0.5s ease-out infinite',
-                    '--tx': `${(Math.random() - 0.5) * 60}px`,
-                    '--ty': `${(Math.random() - 0.5) * 60}px`
-                  } as React.CSSProperties}
-                />
-              ))}
             </g>
           ))}
         </svg>
 
-        {/* Impact Rings */}
-        {combatEvents.map(ev => (
-          <div 
-            key={`${ev.id}-impact`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border-4 pointer-events-none z-20"
-            style={{ 
-              left: ev.targetPos.x, 
-              top: ev.targetPos.y, 
-              borderColor: ev.color,
-              boxShadow: `0 0 20px ${ev.color}`,
-              animation: 'combat-impact 0.8s ease-out infinite'
-            }}
-          />
-        ))}
-
-        {/* Flight Paths */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-40">
+        {/* Flight Paths / Vector Lines */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none">
           {ships.map(s => {
             if (!s.targetPlanetId) return null;
             const target = planets.find(p => p.id === s.targetPlanetId);
@@ -208,16 +164,22 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 key={`path-${s.id}`}
                 x1={s.x} y1={s.y} x2={target.x} y2={target.y}
                 stroke={PLAYER_COLORS[s.owner]}
-                strokeWidth="2"
-                strokeDasharray="8,8"
-                className="animate-[pulse_2s_infinite]"
+                strokeWidth="1.5"
+                strokeDasharray="4, 4"
+                style={{ animation: 'vector-move 1s linear infinite' }}
+                opacity="0.6"
               />
             );
           })}
         </svg>
 
         {planets.map(p => {
-          const isTargeted = combatEvents.some(ev => Math.sqrt((ev.targetPos.x - p.x)**2 + (ev.targetPos.y - p.y)**2) < 20);
+          const isSelected = selectedId === p.id;
+          const popPercent = (p.population / MAX_PLANET_POPULATION) * 100;
+          const ringRadius = 40;
+          const dashArray = 2 * Math.PI * ringRadius;
+          const dashOffset = dashArray - (dashArray * popPercent) / 100;
+
           return (
             <div 
               key={p.id}
@@ -225,30 +187,37 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto"
               style={{ left: p.x, top: p.y }}
             >
-              {/* Max Factories Defensive Shield Visual */}
-              {p.factories >= MAX_FACTORIES && (
-                <div 
-                  className="absolute inset-0 w-20 h-20 -translate-x-3 -translate-y-3 rounded-full border-2 border-cyan-400/40 animate-[pulse_3s_infinite] shadow-[inset_0_0_15px_rgba(34,211,238,0.2)]"
-                  style={{ animation: isTargeted ? 'shield-flare 0.3s ease-in-out infinite' : undefined }}
+              <svg className="absolute w-24 h-24 -translate-y-0.5 overflow-visible pointer-events-none">
+                {/* Population / Health Ring */}
+                <circle 
+                  cx="48" cy="48" r={ringRadius}
+                  fill="none" stroke="rgba(255,255,255,0.05)"
+                  strokeWidth="4"
                 />
-              )}
-              
-              {isSettingCourse && (
-                <div className="absolute inset-0 w-24 h-24 -translate-x-1/4 -translate-y-1/4 rounded-full bg-amber-500/10 animate-ping pointer-events-none" />
-              )}
+                <circle 
+                  cx="48" cy="48" r={ringRadius}
+                  fill="none" stroke={p.owner === 'NEUTRAL' ? '#fff' : PLAYER_COLORS[p.owner]}
+                  strokeWidth="4"
+                  strokeDasharray={dashArray}
+                  strokeDashoffset={dashOffset}
+                  strokeLinecap="round"
+                  className="transition-all duration-1000"
+                  style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
+                />
+              </svg>
+
               <div 
-                className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex items-center justify-center ${selectedId === p.id ? 'scale-125 border-white shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'border-white/10 opacity-80'} ${isSettingCourse ? 'border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]' : ''}`}
-                style={{ backgroundColor: PLAYER_COLORS[p.owner], boxShadow: `0 0 30px ${PLAYER_COLORS[p.owner]}44` }}
+                className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex flex-col items-center justify-center ${isSelected ? 'scale-110 border-white shadow-[0_0_40px_rgba(255,255,255,0.2)]' : 'border-white/10 opacity-80'}`}
+                style={{ backgroundColor: PLAYER_COLORS[p.owner], boxShadow: `inset 0 0 20px rgba(0,0,0,0.4)` }}
               >
-                <span className="text-[10px] font-black text-white/20 select-none">{p.name[0]}</span>
+                <span className="text-[12px] font-black text-white">{p.name[0]}</span>
+                {p.specialization !== 'NONE' && (
+                  <span className="text-[8px] mt-0.5">{p.specialization === 'SHIPYARD' ? '⚓' : p.specialization === 'FORTRESS' ? '🛡️' : '🏭'}</span>
+                )}
               </div>
-              <div className="mt-3 bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+              
+              <div className={`mt-4 bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md transition-opacity whitespace-nowrap ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <span className="text-[10px] font-black text-white uppercase tracking-widest">{p.name}</span>
-              </div>
-              <div className="flex gap-0.5 mt-1">
-                {Array.from({length: Math.floor(p.population)}).map((_, i) => (
-                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/40" />
-                ))}
               </div>
             </div>
           );
@@ -256,50 +225,28 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
 
         {ships.map(s => {
           const pos = shipDisplayPositions[s.id] || { x: s.x, y: s.y };
-          const isTargeted = combatEvents.some(ev => Math.sqrt((ev.targetPos.x - pos.x)**2 + (ev.targetPos.y - pos.y)**2) < 20);
-          
           return (
             <div 
               key={s.id}
               onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(s.id); }}
-              className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group p-4 z-10`}
-              style={{ 
-                left: pos.x, 
-                top: pos.y, 
-                transition: 'all 2s ease-in-out',
-                animation: isTargeted ? 'ship-shake 0.1s linear infinite' : undefined
-              }}
+              className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group p-4 z-10 transition-all duration-1000`}
+              style={{ left: pos.x, top: pos.y }}
             >
-              {selectedId === s.id && (
-                <div className="absolute inset-0 border border-white/30 rounded-full animate-[spin_4s_linear_infinite]" />
-              )}
               <div 
                 className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 shadow-xl transition-all ${selectedId === s.id ? 'scale-125 ring-4 ring-white/20' : 'hover:scale-110'}`} 
-                style={{ 
-                  borderColor: isTargeted ? '#ff4444' : PLAYER_COLORS[s.owner],
-                  boxShadow: isTargeted ? '0 0 15px #ff0000' : `0 0 10px ${PLAYER_COLORS[s.owner]}22`
-                }}
+                style={{ borderColor: PLAYER_COLORS[s.owner] }}
               >
                 <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
-              </div>
-              <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-black/80 px-2 py-0.5 rounded border border-white/5 opacity-0 group-hover:opacity-100 whitespace-nowrap z-50">
-                 <p className="text-[8px] font-black text-white uppercase">{s.name}</p>
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="absolute bottom-10 left-10 flex flex-col gap-2">
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-xl font-bold text-xl">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-xl font-bold text-xl">-</button>
+      <div className="absolute bottom-10 right-10 flex flex-col gap-2">
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold text-xl">+</button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold text-xl">-</button>
       </div>
-
-      {isSettingCourse && (
-        <div className="absolute top-24 left-1/2 -translate-x-1/2 px-6 py-3 bg-amber-500 text-black font-black text-[10px] uppercase tracking-[0.3em] rounded-full shadow-2xl animate-bounce">
-          Select Destination Planet
-        </div>
-      )}
     </div>
   );
 };
