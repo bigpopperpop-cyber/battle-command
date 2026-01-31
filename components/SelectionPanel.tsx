@@ -25,13 +25,8 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
   const pColor = PLAYER_COLORS[selection.owner];
 
   // Logic to determine if detailed intel is available
-  const hasIntel = useMemo(() => {
-    if (!isPlanet) return true;
-    if (isMine) return true;
-    if (!playerRole || !ships.length) return false;
-    // Revealed if a local player's Scout is orbiting this planet
-    return ships.some(s => s.owner === playerRole && s.type === 'SCOUT' && s.currentPlanetId === selection.id);
-  }, [isPlanet, isMine, playerRole, ships, selection.id]);
+  // Fog of war disabled: always provide full intel
+  const hasIntel = true;
 
   const bonuses = useMemo(() => {
     if (!playerRole || !planets.length) return { discount: 0, strength: 1, factoryCount: 0 };
@@ -50,7 +45,7 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
            <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: pColor }} />
            <div className="truncate">
              <h3 className="text-sm font-bold italic text-white uppercase truncate">
-               {hasIntel ? selection.name : 'Classified Contact'}
+               {selection.name}
              </h3>
              <span className="text-[9px] font-black uppercase tracking-widest text-slate-500">
                {selection.owner === 'NEUTRAL' ? 'Neutral Sector' : `${selection.owner} Space`}
@@ -64,24 +59,23 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
         {isPlanet ? (
           <>
             <div className="flex justify-between items-center mb-2">
-              <span className={`text-[8px] font-black uppercase tracking-[0.2em] ${hasIntel ? 'text-emerald-500' : 'text-amber-500'}`}>
-                {hasIntel ? '● Deep Sensor Lock' : '○ Ghost Signature'}
+              <span className="text-[8px] font-black uppercase tracking-[0.2em] text-emerald-500">
+                ● Deep Sensor Lock
               </span>
-              {!hasIntel && <span className="text-[8px] font-bold text-slate-500 italic">Deploy Scout for Intel</span>}
             </div>
 
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 text-center">
                 <span className="block text-[8px] font-black text-slate-600 uppercase mb-1">Pop</span>
-                <span className="text-sm font-bold text-white">{hasIntel ? selection.population.toFixed(1) : '??'}</span>
+                <span className="text-sm font-bold text-white">{selection.population.toFixed(1)}</span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 text-center">
                 <span className="block text-[8px] font-black text-slate-600 uppercase mb-1">Mines</span>
-                <span className="text-sm font-bold text-amber-500">{hasIntel ? selection.mines : '??'}</span>
+                <span className="text-sm font-bold text-amber-500">{selection.mines}</span>
               </div>
               <div className="bg-slate-950/60 p-3 rounded-2xl border border-white/5 text-center">
                 <span className="block text-[8px] font-black text-slate-600 uppercase mb-1">Fact</span>
-                <span className="text-sm font-bold text-cyan-500">{hasIntel ? selection.factories : '??'}</span>
+                <span className="text-sm font-bold text-cyan-500">{selection.factories}</span>
               </div>
             </div>
 

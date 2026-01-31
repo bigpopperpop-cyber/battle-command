@@ -55,15 +55,6 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     return posMap;
   }, [ships, planets]);
 
-  const scoutedPlanetIds = useMemo(() => {
-    if (!playerRole) return new Set<string>();
-    return new Set(
-      ships
-        .filter(s => s.owner === playerRole && s.type === 'SCOUT' && s.currentPlanetId)
-        .map(s => s.currentPlanetId!)
-    );
-  }, [ships, playerRole]);
-
   const handlePointerDown = (e: React.PointerEvent) => {
     isDragging.current = true;
     moved.current = false;
@@ -121,7 +112,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
 
         {planets.map(p => {
           const isSelected = selectedId === p.id;
-          const isScouted = scoutedPlanetIds.has(p.id) || p.owner === playerRole;
+          // Fog of war disabled: all planets are always scouted
+          const isScouted = true;
           const ringRadius = 40;
           const dashArray = 2 * Math.PI * ringRadius;
           const popPercent = (p.population / MAX_PLANET_POPULATION) * 100;
@@ -143,20 +135,20 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
               <div className="relative flex items-center justify-center pointer-events-none">
                 <svg className="absolute w-24 h-24 overflow-visible">
                   <circle cx="48" cy="48" r={ringRadius} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
-                  <circle cx="48" cy="48" r={ringRadius} fill="none" stroke={p.owner === 'NEUTRAL' ? '#fff' : PLAYER_COLORS[p.owner]} strokeWidth="4" strokeDasharray={dashArray} strokeDashoffset={isScouted ? dashOffset : dashArray} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }} />
+                  <circle cx="48" cy="48" r={ringRadius} fill="none" stroke={p.owner === 'NEUTRAL' ? '#fff' : PLAYER_COLORS[p.owner]} strokeWidth="4" strokeDasharray={dashArray} strokeDashoffset={dashOffset} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }} />
                   {isSettingCourse && (
                     <circle cx="48" cy="48" r={ringRadius + 22} fill="none" stroke="#22d3ee" strokeWidth="3" strokeDasharray="8,8" style={{ animation: 'target-pulse 1.5s ease-in-out infinite' }} />
                   )}
                 </svg>
 
                 <div className={`w-14 h-14 rounded-full border-2 transition-all flex flex-col items-center justify-center ${isSelected ? 'scale-110 border-white shadow-[0_0_20px_rgba(255,255,255,0.4)]' : 'border-white/10'}`} style={{ backgroundColor: PLAYER_COLORS[p.owner] }}>
-                  <span className="text-[12px] font-black text-white">{isScouted ? p.name[0] : '?'}</span>
+                  <span className="text-[12px] font-black text-white">{p.name[0]}</span>
                 </div>
               </div>
               
               <div className={`mt-8 bg-black/90 px-4 py-1.5 rounded-full border border-white/20 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
                 <span className={`text-[10px] font-black uppercase tracking-widest ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
-                  {isSettingCourse && !isSelected ? `NAV-SYNC: ${p.name}` : (isScouted ? p.name : 'Classified Sector')}
+                  {isSettingCourse && !isSelected ? `NAV-SYNC: ${p.name}` : p.name}
                 </span>
               </div>
             </div>

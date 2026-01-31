@@ -313,11 +313,9 @@ const App: React.FC = () => {
   };
 
   const visibleShips = useMemo(() => {
-    if (!gameState || !playerRole) return gameState?.ships || [];
-    const myPlanetsIds = new Set(gameState.planets.filter(p => p.owner === playerRole).map(p => p.id));
-    const myShipPlanetIds = new Set(gameState.ships.filter(s => s.owner === playerRole).map(s => s.currentPlanetId).filter(Boolean));
-    return gameState.ships.filter(s => s.owner === playerRole || (s.currentPlanetId && (myPlanetsIds.has(s.currentPlanetId) || myShipPlanetIds.has(s.currentPlanetId))));
-  }, [gameState, playerRole]);
+    // Fog of war disabled: return all ships from the game state
+    return gameState?.ships || [];
+  }, [gameState]);
 
   const selectedObject = useMemo(() => gameState ? gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null : null, [selectedId, gameState]);
   const humanPlayers = useMemo(() => {
