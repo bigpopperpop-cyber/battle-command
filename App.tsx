@@ -179,17 +179,23 @@ const App: React.FC = () => {
   const handleSelect = (id: string) => {
     if (!gameState) return;
 
+    // If we are setting a course, we specifically look for a planet to target
     if (isSettingCourse && selectedId) {
       const selectedShip = gameState.ships.find(s => s.id === selectedId);
       const targetPlanet = gameState.planets.find(p => p.id === id);
 
+      // If we clicked a planet while a ship was waiting for a destination
       if (selectedShip && targetPlanet) {
         const nextShips = gameState.ships.map(s => 
           s.id === selectedId 
             ? { ...s, targetPlanetId: id, currentPlanetId: undefined, status: 'MOVING' as const } 
             : s
         );
-        const nextState = { ...gameState, ships: nextShips, readyPlayers: (gameState.readyPlayers || []).filter(p => p !== playerRole) };
+        const nextState = { 
+          ...gameState, 
+          ships: nextShips, 
+          readyPlayers: (gameState.readyPlayers || []).filter(p => p !== playerRole) 
+        };
         
         if (db && gameId && !isConfigPlaceholder) {
           set(ref(db, `games/${gameId}/state`), nextState);
@@ -197,10 +203,20 @@ const App: React.FC = () => {
           setGameState(nextState);
         }
         setIsSettingCourse(false);
+        return; // Success: Destination set
+      }
+      
+      // If we click another ship while in course mode, we switch focus to that ship but keep targeting mode (or could clear it)
+      const clickedAnotherShip = gameState.ships.find(s => s.id === id);
+      if (clickedAnotherShip) {
+        setSelectedId(id);
+        // We clear targeting mode because user clicked a ship, likely changing their mind
+        setIsSettingCourse(false);
         return;
       }
     }
     
+    // Normal selection behavior
     setSelectedId(id);
     if (isSettingCourse) setIsSettingCourse(false);
   };
