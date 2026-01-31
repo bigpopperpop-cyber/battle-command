@@ -17,7 +17,8 @@ const firebaseConfig = {
 };
 
 let db: Database | null = null;
-const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL.includes("default-rtdb");
+// Only treat as placeholder if the URL is literally the default template or empty
+const isConfigPlaceholder = !firebaseConfig.databaseURL || firebaseConfig.databaseURL === "" || firebaseConfig.databaseURL.includes("REPLACE_WITH");
 
 try {
   const app: FirebaseApp = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -53,6 +54,7 @@ const App: React.FC = () => {
   // Reliability States
   const [isRelayOnline, setIsRelayOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [initialSyncComplete, setInitialSyncComplete] = useState(false);
 
   // Deep Link Detection
   useEffect(() => {
@@ -65,6 +67,8 @@ const App: React.FC = () => {
       setPlayerRole(urlRole);
       setViewMode('PLAYER');
       setHasStarted(true);
+      // Wait for sync to complete before allowing map interaction
+      setInitialSyncComplete(false); 
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -78,7 +82,6 @@ const App: React.FC = () => {
         setIsRelayOnline(true);
       } else {
         setIsRelayOnline(false);
-        // Attempt forced reconnection after a delay if still offline
         setTimeout(() => {
           if (db) goOnline(db);
         }, 3000);
@@ -89,7 +92,10 @@ const App: React.FC = () => {
 
   // Sync state from Firebase
   useEffect(() => {
-    if (!db || !gameId || isConfigPlaceholder) return;
+    if (!db || !gameId || isConfigPlaceholder) {
+      if (gameId) setInitialSyncComplete(true); // Treat local as "synced"
+      return;
+    }
     setIsSyncing(true);
     const stateRef = ref(db, `games/${gameId}/state`);
     const unsubscribe = onValue(stateRef, (snapshot) => {
@@ -97,6 +103,7 @@ const App: React.FC = () => {
       if (data) {
         setGameState(data);
         setIsSyncing(false);
+        setInitialSyncComplete(true);
       }
     }, (err) => {
       console.error("State Sync Failed:", err);
@@ -142,7 +149,6 @@ const App: React.FC = () => {
          const baseStats = SHIP_STATS[shipType];
          const bonuses = getEmpireBonuses(prev.planets, playerRole);
          
-         // Spec bonus: SHIPYARD makes ships 25% cheaper at that specific planet
          const isShipyard = selected.specialization === 'SHIPYARD';
          const specDiscount = isShipyard ? 0.25 : 0;
          const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - specDiscount));
@@ -182,12 +188,12 @@ const App: React.FC = () => {
   };
 
   const handleSelect = (id: string) => {
-    // Logic for setting destination while in course-setting mode
+    if (!initialSyncComplete) return;
+
     if (isSettingCourse && selectedId) {
       const selectedShip = gameState.ships.find(s => s.id === selectedId);
       const targetPlanet = gameState.planets.find(p => p.id === id);
 
-      // Only allow setting target if selection is a ship and target is a planet
       if (selectedShip && targetPlanet) {
         setGameState(prev => {
           const nextShips = prev.ships.map(s => 
@@ -207,9 +213,7 @@ const App: React.FC = () => {
       }
     }
     
-    // Normal selection
     setSelectedId(id);
-    // If you tap a new object while setting course, and it wasn't a valid target, we cancel targeting
     if (isSettingCourse) setIsSettingCourse(false);
   };
 
@@ -248,7 +252,6 @@ const App: React.FC = () => {
            const invaders = shipsAtPlanet.filter(s => s.owner !== planet.owner);
            if (invaders.length > 0 && planet.batteries > 0) {
               const target = invaders[Math.floor(Math.random() * invaders.length)];
-              // Spec bonus: FORTRESS batteries are 2x stronger
               const batteryDamage = planet.batteries * 40 * (planet.specialization === 'FORTRESS' ? 2 : 1);
               damageMap[target.id] = (damageMap[target.id] || 0) + batteryDamage;
               events.push({
@@ -298,7 +301,6 @@ const App: React.FC = () => {
         if (invaders.length > 0) {
           nextPop = Math.max(0, p.population - (invaders.length * 0.5));
         } else {
-          // Spec bonus: INDUSTRIAL growth is 50% faster
           const growthBase = p.specialization === 'INDUSTRIAL' ? 0.3 : 0.2;
           nextPop = Math.min(MAX_PLANET_POPULATION, p.population + growthBase);
         }
@@ -318,8 +320,18 @@ const App: React.FC = () => {
 
       const finalState: GameState = { ...gameState, round: gameState.round + 1, planets: nextPlanets, ships: nextShips, playerCredits: nextCredits, readyPlayers: [], winner };
       setCombatEvents(events);
-      if (db && gameId && !isConfigPlaceholder) await set(ref(db, `games/${gameId}/state`), finalState);
-      else setGameState(finalState);
+      if (db && gameId && !isConfigPlaceholder) {
+        await set(ref(db, `games/${gameId}/state`), finalState);
+        // Update lobby metadata to show turn progression
+        await set(ref(db, `lobby/${gameId}`), {
+          id: gameId,
+          round: finalState.round,
+          name: `${finalState.playerNames['P1']}'s Sector`,
+          playerCount: finalState.playerCount
+        });
+      } else {
+        setGameState(finalState);
+      }
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
   };
 
@@ -376,8 +388,15 @@ const App: React.FC = () => {
         setIsNewGameOpen(false);
         const newFreq = Math.floor(100 + Math.random() * 899).toString();
         setGameId(newFreq);
+        setInitialSyncComplete(true);
         if (db && !isConfigPlaceholder) {
           set(ref(db, `games/${newFreq}/state`), state);
+          set(ref(db, `lobby/${newFreq}`), {
+            id: newFreq,
+            round: state.round,
+            name: `${state.playerNames['P1']}'s Sector`,
+            playerCount: state.playerCount
+          });
         }
       }} />
       <LobbyModal isOpen={isLobbyOpen} onClose={() => setIsLobbyOpen(false)} db={db} onJoin={(id, role) => {
@@ -386,6 +405,7 @@ const App: React.FC = () => {
         setViewMode('PLAYER');
         setHasStarted(true);
         setIsLobbyOpen(false);
+        setInitialSyncComplete(false);
       }} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
@@ -393,6 +413,14 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk'] safe-pt safe-pb">
+      {!initialSyncComplete && viewMode === 'PLAYER' && (
+        <div className="fixed inset-0 z-[2000] bg-black/90 backdrop-blur-3xl flex flex-col items-center justify-center">
+           <div className="w-24 h-24 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-8" />
+           <h2 className="text-2xl font-black italic text-cyan-500 uppercase tracking-widest">Establishing Bridge Link...</h2>
+           <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] mt-4">Syncing Sector {gameId}</p>
+        </div>
+      )}
+
       {gameState.winner && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/90 backdrop-blur-2xl animate-in fade-in duration-1000">
            <div className="text-center">
@@ -477,7 +505,6 @@ const App: React.FC = () => {
         )}
       </main>
       
-      {/* Visual Reconnect Overlay (Non-blocking but informative) */}
       {!isRelayOnline && (
         <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-red-600/90 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-2xl z-[1000] animate-bounce">
           ⚠️ Signal Lost - Attempting Subspace Re-link
