@@ -206,15 +206,16 @@ const App: React.FC = () => {
       }
       
       const clickedAnotherShip = gameState.ships.find(s => s.id === id);
-      if (clickedAnotherShip) {
-        // USER INTENT CHANGE: Selected a different vessel, cancel targeting for previous one
+      // ONLY cancel course setting if we specifically select a DIFFERENT ship
+      if (clickedAnotherShip && id !== selectedId) {
         setSelectedId(id);
         setIsSettingCourse(false);
         return;
       }
 
-      // If they clicked something that isn't a planet or a ship, we don't automatically cancel.
-      // We keep the "isSettingCourse" mode active so they can try to click the planet again.
+      // If they clicked the same ship or background, KEEP targeting mode active
+      if (id === selectedId) return;
+      
       return; 
     }
     

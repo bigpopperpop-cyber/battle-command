@@ -64,35 +64,39 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     );
   }, [ships, playerRole]);
 
-  const handleStart = (x: number, y: number) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     isDragging.current = true;
     moved.current = false;
-    startPos.current = { x, y };
+    startPos.current = { x: e.clientX, y: e.clientY };
     startOffset.current = { ...offset };
+    // Use pointer capture for smoother dragging across the whole window
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
   };
 
-  const handleMove = (x: number, y: number) => {
+  const handlePointerMove = (e: React.PointerEvent) => {
     if (!isDragging.current) return;
-    const dx = x - startPos.current.x;
-    const dy = y - startPos.current.y;
-    // Lowered threshold back to 10px to ensure quick taps are registered better
-    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) moved.current = true;
+    const dx = e.clientX - startPos.current.x;
+    const dy = e.clientY - startPos.current.y;
+    // High tolerance (30px) for taps to distinguish them from intentional drags
+    if (Math.abs(dx) > 30 || Math.abs(dy) > 30) moved.current = true;
     setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    isDragging.current = false;
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
   };
 
   return (
     <div 
       className={`w-full h-full relative overflow-hidden bg-[#020617] cursor-grab active:cursor-grabbing touch-none select-none ${isSettingCourse ? 'cursor-crosshair' : ''}`}
-      onMouseDown={(e) => handleStart(e.clientX, e.clientY)}
-      onMouseMove={(e) => handleMove(e.clientX, e.clientY)}
-      onMouseUp={() => isDragging.current = false}
-      onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
-      onTouchMove={(e) => handleMove(e.touches[0].clientX, e.touches[0].clientY)}
-      onTouchEnd={() => isDragging.current = false}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
     >
       <style>{`
         @keyframes laser-grow { 0% { opacity: 0; } 50% { opacity: 1; } 100% { opacity: 0; } }
-        @keyframes target-pulse { 0% { opacity: 0.3; transform: scale(1); } 50% { opacity: 0.7; transform: scale(1.1); } 100% { opacity: 0.3; transform: scale(1); } }
+        @keyframes target-pulse { 0% { opacity: 0.2; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.15); } 100% { opacity: 0.2; transform: scale(1); } }
       `}</style>
 
       <div 
@@ -133,8 +137,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                   onSelect(p.id);
                 }
               }}
-              // Planets pushed to high Z during targeting to ensure they catch the tap
-              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-14 ${isSettingCourse ? 'z-50' : 'z-20'}`}
+              // Planets pushed to extremely high Z during targeting to ensure they catch the tap
+              className={`absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto cursor-pointer p-16 ${isSettingCourse ? 'z-[60]' : 'z-20'}`}
               style={{ left: p.x, top: p.y }}
             >
               <div className="relative flex items-center justify-center pointer-events-none">
@@ -142,7 +146,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                   <circle cx="48" cy="48" r={ringRadius} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="4" />
                   <circle cx="48" cy="48" r={ringRadius} fill="none" stroke={p.owner === 'NEUTRAL' ? '#fff' : PLAYER_COLORS[p.owner]} strokeWidth="4" strokeDasharray={dashArray} strokeDashoffset={isScouted ? dashOffset : dashArray} strokeLinecap="round" style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }} />
                   {isSettingCourse && (
-                    <circle cx="48" cy="48" r={ringRadius + 20} fill="none" stroke="#22d3ee" strokeWidth="2" strokeDasharray="4,8" style={{ animation: 'target-pulse 2s ease-in-out infinite' }} />
+                    <circle cx="48" cy="48" r={ringRadius + 22} fill="none" stroke="#22d3ee" strokeWidth="3" strokeDasharray="8,8" style={{ animation: 'target-pulse 1.5s ease-in-out infinite' }} />
                   )}
                 </svg>
 
@@ -151,9 +155,9 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 </div>
               </div>
               
-              <div className={`mt-6 bg-black/80 px-3 py-1 rounded-full border border-white/10 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                <span className={`text-[10px] font-black uppercase ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
-                  {isSettingCourse && !isSelected ? `TARGET: ${p.name}` : (isScouted ? p.name : 'Unknown Contact')}
+              <div className={`mt-8 bg-black/90 px-4 py-1.5 rounded-full border border-white/20 transition-opacity whitespace-nowrap pointer-events-none ${isSelected || isSettingCourse ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                <span className={`text-[10px] font-black uppercase tracking-widest ${isSettingCourse && !isSelected ? 'text-cyan-400 animate-pulse' : 'text-white'}`}>
+                  {isSettingCourse && !isSelected ? `NAV-SYNC: ${p.name}` : (isScouted ? p.name : 'Classified Sector')}
                 </span>
               </div>
             </div>
@@ -170,11 +174,11 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 e.stopPropagation(); 
                 if (!moved.current) onSelect(s.id); 
               }} 
-              // Disable ship interaction during targeting mode unless it's a DIFFERENT ship we want to select
-              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? 'pointer-events-none opacity-40' : 'pointer-events-auto'}`} 
+              // Almost entirely disable ship interaction during targeting mode unless it's a target switch intent
+              className={`absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-6 z-40 ${isSettingCourse ? (isCurrentSelected ? 'pointer-events-none' : 'pointer-events-auto') : 'pointer-events-auto'}`} 
               style={{ left: pos.x, top: pos.y }}
             >
-              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 ${isCurrentSelected ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-opacity ${isSettingCourse && !isCurrentSelected ? 'opacity-30' : 'opacity-100'} ${isCurrentSelected ? 'scale-125 border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]' : ''}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
                 <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
             </div>
@@ -183,8 +187,8 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
       </div>
 
       <div className="absolute bottom-10 right-10 flex flex-col gap-2 z-50">
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10">-</button>
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10 active:scale-95">+</button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.2))} className="w-12 h-12 glass-card rounded-2xl font-bold flex items-center justify-center text-xl hover:bg-white/10 active:scale-95">-</button>
       </div>
     </div>
   );
