@@ -374,9 +374,9 @@ const App: React.FC = () => {
         setViewMode('HOST');
         setHasStarted(true);
         setIsNewGameOpen(false);
+        const newFreq = Math.floor(100 + Math.random() * 899).toString();
+        setGameId(newFreq);
         if (db && !isConfigPlaceholder) {
-          const newFreq = Math.floor(100 + Math.random() * 899).toString();
-          setGameId(newFreq);
           set(ref(db, `games/${newFreq}/state`), state);
         }
       }} />
