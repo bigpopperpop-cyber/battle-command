@@ -1,6 +1,6 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Planet, Ship } from '../types';
+import { Planet, Ship, Owner } from '../types';
 import { GRID_SIZE, PLAYER_COLORS, MAX_FACTORIES, MAX_PLANET_POPULATION } from '../gameLogic';
 import { CombatEvent } from '../App';
 
@@ -11,9 +11,10 @@ interface MapViewProps {
   onSelect: (id: string) => void;
   isSettingCourse: boolean;
   combatEvents?: CombatEvent[];
+  playerRole?: Owner | null;
 }
 
-const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect, isSettingCourse, combatEvents = [] }) => {
+const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect, isSettingCourse, combatEvents = [], playerRole }) => {
   const [zoom, setZoom] = useState(0.5);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const isDragging = useRef(false);
@@ -54,6 +55,16 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     return posMap;
   }, [ships, planets]);
 
+  // Determine which planets are being "Scouted" by the local player
+  const scoutedPlanetIds = useMemo(() => {
+    if (!playerRole) return new Set<string>();
+    return new Set(
+      ships
+        .filter(s => s.owner === playerRole && s.type === 'SCOUT' && s.currentPlanetId)
+        .map(s => s.currentPlanetId!)
+    );
+  }, [ships, playerRole]);
+
   const handleStart = (x: number, y: number) => {
     isDragging.current = true;
     moved.current = false;
@@ -86,15 +97,9 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           90% { opacity: 1; }
           100% { stroke-dashoffset: 0; opacity: 0; }
         }
-        @keyframes combat-impact {
-          0% { transform: scale(0.5); opacity: 1; border-width: 10px; }
-          100% { transform: scale(4); opacity: 0; border-width: 1px; }
-        }
-        @keyframes ship-shake {
-          0%, 100% { transform: translate(-50%, -50%); }
-          25% { transform: translate(-52%, -48%) rotate(2deg); }
-          50% { transform: translate(-48%, -52%) rotate(-2deg); }
-          75% { transform: translate(-51%, -49%) rotate(1deg); }
+        @keyframes scan-rotate {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
         }
         @keyframes vector-move {
           to { stroke-dashoffset: -20; }
@@ -136,7 +141,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           );
         })}
 
-        {/* Combat Beams and Effects */}
+        {/* Combat Beams */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-30">
           {combatEvents.map(ev => (
             <g key={ev.id}>
@@ -153,7 +158,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           ))}
         </svg>
 
-        {/* Flight Paths / Vector Lines */}
+        {/* Flight Paths */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none">
           {ships.map(s => {
             if (!s.targetPlanetId) return null;
@@ -175,6 +180,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
 
         {planets.map(p => {
           const isSelected = selectedId === p.id;
+          const isScouted = scoutedPlanetIds.has(p.id) || p.owner === playerRole;
           const popPercent = (p.population / MAX_PLANET_POPULATION) * 100;
           const ringRadius = 40;
           const dashArray = 2 * Math.PI * ringRadius;
@@ -187,8 +193,14 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto"
               style={{ left: p.x, top: p.y }}
             >
+              {/* Tactical Scan Effect */}
+              {scoutedPlanetIds.has(p.id) && (
+                <div className="absolute w-32 h-32 border border-cyan-400/20 rounded-full" style={{ animation: 'scan-rotate 8s linear infinite' }}>
+                  <div className="absolute top-0 left-1/2 -translate-x-1/2 w-1 h-1 bg-cyan-400 rounded-full shadow-[0_0_10px_#22d3ee]" />
+                </div>
+              )}
+
               <svg className="absolute w-24 h-24 -translate-y-0.5 overflow-visible pointer-events-none">
-                {/* Population / Health Ring */}
                 <circle 
                   cx="48" cy="48" r={ringRadius}
                   fill="none" stroke="rgba(255,255,255,0.05)"
@@ -199,7 +211,7 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                   fill="none" stroke={p.owner === 'NEUTRAL' ? '#fff' : PLAYER_COLORS[p.owner]}
                   strokeWidth="4"
                   strokeDasharray={dashArray}
-                  strokeDashoffset={dashOffset}
+                  strokeDashoffset={isScouted ? dashOffset : dashArray}
                   strokeLinecap="round"
                   className="transition-all duration-1000"
                   style={{ transform: 'rotate(-90deg)', transformOrigin: 'center' }}
@@ -210,14 +222,14 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
                 className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex flex-col items-center justify-center ${isSelected ? 'scale-110 border-white shadow-[0_0_40px_rgba(255,255,255,0.2)]' : 'border-white/10 opacity-80'}`}
                 style={{ backgroundColor: PLAYER_COLORS[p.owner], boxShadow: `inset 0 0 20px rgba(0,0,0,0.4)` }}
               >
-                <span className="text-[12px] font-black text-white">{p.name[0]}</span>
-                {p.specialization !== 'NONE' && (
+                <span className="text-[12px] font-black text-white">{isScouted ? p.name[0] : '?'}</span>
+                {(isScouted && p.specialization !== 'NONE') && (
                   <span className="text-[8px] mt-0.5">{p.specialization === 'SHIPYARD' ? '⚓' : p.specialization === 'FORTRESS' ? '🛡️' : '🏭'}</span>
                 )}
               </div>
               
               <div className={`mt-4 bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md transition-opacity whitespace-nowrap ${isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
-                <span className="text-[10px] font-black text-white uppercase tracking-widest">{p.name}</span>
+                <span className="text-[10px] font-black text-white uppercase tracking-widest">{isScouted ? p.name : 'Unknown Contact'}</span>
               </div>
             </div>
           );

@@ -408,6 +408,7 @@ const App: React.FC = () => {
           onSelect={handleSelect}
           isSettingCourse={isSettingCourse}
           combatEvents={combatEvents}
+          playerRole={playerRole}
         />
         <SelectionPanel 
           selection={selectedObject} 
