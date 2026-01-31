@@ -7,6 +7,7 @@ export const MIN_PLANET_DISTANCE = 180;
 export const MAX_PLANET_POPULATION = 5;
 export const MAX_FACTORIES = 5;
 export const MAX_MINES = 10;
+export const MAX_BATTERIES = 5; // New: Planetary defense limit
 
 const PLANET_NAMES = [
   "Rigel VII", "Betelgeuse Prime", "Delta Pavonis", "Alpha Centauri", "Sol", 
@@ -44,17 +45,16 @@ export const SHIP_COSTS = {
   WARSHIP: SHIP_STATS.WARSHIP.cost 
 };
 
-// New mechanic: Factories make ships 1% stronger and 1% cheaper
 export const getEmpireBonuses = (planets: Planet[], owner: Owner) => {
   const factoryCount = planets
     .filter(p => p.owner === owner)
     .reduce((sum, p) => sum + p.factories, 0);
   
   return {
-    discount: Math.min(0.75, factoryCount * 0.01), // Cap discount at 75% for balance
+    discount: Math.min(0.75, factoryCount * 0.01),
     strength: 1 + (factoryCount * 0.01),
-    firepowerBonus: factoryCount * 0.5, // +0.5 damage per factory
-    scoutBonus: factoryCount >= 15 ? 0.05 : 0, // Extra 5% sabotage
+    firepowerBonus: factoryCount * 0.5,
+    scoutBonus: factoryCount >= 15 ? 0.05 : 0,
     warshipCapacity: factoryCount >= 30 ? 4 : (factoryCount >= 25 ? 2 : (factoryCount >= 20 ? 1 : 0)),
     factoryCount
   };
@@ -100,10 +100,11 @@ export const generateInitialState = (
       name: PLANET_NAMES[i],
       x, y,
       owner,
-      population: owner !== 'NEUTRAL' ? 3 : 0, // Start with 3 people
+      population: owner !== 'NEUTRAL' ? 3 : 0,
       resources: 500,
       factories: owner !== 'NEUTRAL' ? 2 : 0,
       mines: owner !== 'NEUTRAL' ? 2 : 0,
+      batteries: owner !== 'NEUTRAL' ? 1 : 0,
       defense: maxDef,
       maxDefense: maxDef,
     });
@@ -117,7 +118,7 @@ export const generateInitialState = (
 
   for (let i = 1; i <= playerCount; i++) {
     const pId = `P${i}` as Owner;
-    playerCredits[pId] = 2000; // Increased starting credits for new costs
+    playerCredits[pId] = 2000;
     if (!playerNames[pId]) playerNames[pId] = `Empire ${pId}`;
 
     const home = planets.find(p => p.owner === pId)!;
@@ -157,6 +158,7 @@ export const generateInitialState = (
     aiDifficulty,
     isHost: true,
     activePlayer: 'P1',
-    readyPlayers: []
+    readyPlayers: [],
+    winner: null
   };
 };

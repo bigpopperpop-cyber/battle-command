@@ -12,6 +12,7 @@ export interface Planet {
   resources: number; 
   factories: number;
   mines: number;
+  batteries: number; // New: Defense system
   defense: number; 
   maxDefense: number;
 }
@@ -27,7 +28,7 @@ export interface Ship {
   y: number;
   targetPlanetId?: string;
   currentPlanetId?: string;
-  fleetId?: string; // Grouping ID for fleets
+  fleetId?: string;
   cargo: number;
   maxCargo: number;
   cargoPeople: number;
@@ -53,4 +54,5 @@ export interface GameState {
   readyPlayers: Owner[]; 
   logs: string[];
   isHost?: boolean;
+  winner?: Owner | null; // New: Victory tracking
 }

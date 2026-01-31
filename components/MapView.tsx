@@ -84,18 +84,32 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
     >
       <style>{`
         @keyframes laser-grow {
-          0% { stroke-dashoffset: 200; opacity: 0; }
-          20% { opacity: 1; }
-          80% { opacity: 1; }
+          0% { stroke-dashoffset: 240; opacity: 0; }
+          10% { opacity: 1; }
+          90% { opacity: 1; }
           100% { stroke-dashoffset: 0; opacity: 0; }
         }
         @keyframes combat-impact {
-          0% { transform: scale(0.5); opacity: 1; border-width: 8px; }
-          100% { transform: scale(3); opacity: 0; border-width: 1px; }
+          0% { transform: scale(0.5); opacity: 1; border-width: 10px; }
+          100% { transform: scale(4); opacity: 0; border-width: 1px; }
         }
-        @keyframes flash {
-          0%, 100% { opacity: 0; }
-          50% { opacity: 1; }
+        @keyframes ship-shake {
+          0%, 100% { transform: translate(-50%, -50%); }
+          25% { transform: translate(-52%, -48%) rotate(2deg); }
+          50% { transform: translate(-48%, -52%) rotate(-2deg); }
+          75% { transform: translate(-51%, -49%) rotate(1deg); }
+        }
+        @keyframes spark-fly {
+          0% { transform: translate(0, 0) scale(1); opacity: 1; }
+          100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
+        }
+        @keyframes muzzle-pop {
+          0% { transform: scale(0); opacity: 1; }
+          100% { transform: scale(2); opacity: 0; }
+        }
+        @keyframes shield-flare {
+          0%, 100% { filter: brightness(1); }
+          50% { filter: brightness(3) drop-shadow(0 0 15px cyan); }
         }
       `}</style>
 
@@ -111,27 +125,59 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
         {/* Grid Background */}
         <div className="absolute inset-0 opacity-[0.03]" style={{ backgroundImage: 'linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)', backgroundSize: '100px 100px' }} />
 
+        {/* Filters */}
+        <svg className="hidden">
+          <defs>
+            <filter id="bloom">
+              <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
+              <feComposite in="SourceGraphic" in2="blur" operator="over" />
+            </filter>
+          </defs>
+        </svg>
+
         {/* Combat Beams and Effects */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-20">
+        <svg className="absolute inset-0 w-full h-full pointer-events-none z-30" style={{ filter: 'url(#bloom)' }}>
           {combatEvents.map(ev => (
             <g key={ev.id}>
+              {/* Core Laser */}
+              <line 
+                x1={ev.attackerPos.x} y1={ev.attackerPos.y}
+                x2={ev.targetPos.x} y2={ev.targetPos.y}
+                stroke="#fff"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray="20, 220"
+                style={{ animation: 'laser-grow 0.6s ease-out infinite' }}
+              />
+              {/* Outer Energy Beam */}
               <line 
                 x1={ev.attackerPos.x} y1={ev.attackerPos.y}
                 x2={ev.targetPos.x} y2={ev.targetPos.y}
                 stroke={ev.color}
-                strokeWidth="4"
+                strokeWidth="6"
                 strokeLinecap="round"
-                strokeDasharray="10, 190"
-                style={{ 
-                  animation: 'laser-grow 1s ease-out infinite',
-                  filter: `drop-shadow(0 0 8px ${ev.color})` 
-                }}
+                strokeDasharray="20, 220"
+                style={{ animation: 'laser-grow 0.6s ease-out infinite' }}
               />
+              {/* Muzzle Flash */}
               <circle 
-                cx={ev.attackerPos.x} cy={ev.attackerPos.y} r="10"
+                cx={ev.attackerPos.x} cy={ev.attackerPos.y} r="8"
                 fill={ev.color}
-                style={{ animation: 'flash 0.5s ease-in-out infinite' }}
+                style={{ animation: 'muzzle-pop 0.3s ease-out infinite' }}
               />
+              {/* Impact Sparks */}
+              {[...Array(5)].map((_, i) => (
+                <circle 
+                  key={i}
+                  cx={ev.targetPos.x} cy={ev.targetPos.y} r="2"
+                  fill="#fff"
+                  style={{ 
+                    animation: 'spark-fly 0.5s ease-out infinite',
+                    '--tx': `${(Math.random() - 0.5) * 60}px`,
+                    '--ty': `${(Math.random() - 0.5) * 60}px`
+                  } as React.CSSProperties}
+                />
+              ))}
             </g>
           ))}
         </svg>
@@ -140,12 +186,13 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
         {combatEvents.map(ev => (
           <div 
             key={`${ev.id}-impact`}
-            className="absolute -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border-4 pointer-events-none"
+            className="absolute -translate-x-1/2 -translate-y-1/2 w-20 h-20 rounded-full border-4 pointer-events-none z-20"
             style={{ 
               left: ev.targetPos.x, 
               top: ev.targetPos.y, 
               borderColor: ev.color,
-              animation: 'combat-impact 1.2s ease-out infinite'
+              boxShadow: `0 0 20px ${ev.color}`,
+              animation: 'combat-impact 0.8s ease-out infinite'
             }}
           />
         ))}
@@ -169,51 +216,70 @@ const MapView: React.FC<MapViewProps> = ({ planets, ships, selectedId, onSelect,
           })}
         </svg>
 
-        {planets.map(p => (
-          <div 
-            key={p.id}
-            onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(p.id); }}
-            className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto"
-            style={{ left: p.x, top: p.y }}
-          >
-            {/* Max Factories Defensive Shield Visual */}
-            {p.factories >= MAX_FACTORIES && (
-              <div className="absolute inset-0 w-20 h-20 -translate-x-3 -translate-y-3 rounded-full border-2 border-cyan-400/40 animate-[pulse_3s_infinite] shadow-[inset_0_0_15px_rgba(34,211,238,0.2)]" />
-            )}
-            
-            {isSettingCourse && (
-              <div className="absolute inset-0 w-24 h-24 -translate-x-1/4 -translate-y-1/4 rounded-full bg-amber-500/10 animate-ping pointer-events-none" />
-            )}
+        {planets.map(p => {
+          const isTargeted = combatEvents.some(ev => Math.sqrt((ev.targetPos.x - p.x)**2 + (ev.targetPos.y - p.y)**2) < 20);
+          return (
             <div 
-              className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex items-center justify-center ${selectedId === p.id ? 'scale-125 border-white shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'border-white/10 opacity-80'} ${isSettingCourse ? 'border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]' : ''}`}
-              style={{ backgroundColor: PLAYER_COLORS[p.owner], boxShadow: `0 0 30px ${PLAYER_COLORS[p.owner]}44` }}
+              key={p.id}
+              onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(p.id); }}
+              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center group pointer-events-auto"
+              style={{ left: p.x, top: p.y }}
             >
-              <span className="text-[10px] font-black text-white/20 select-none">{p.name[0]}</span>
+              {/* Max Factories Defensive Shield Visual */}
+              {p.factories >= MAX_FACTORIES && (
+                <div 
+                  className="absolute inset-0 w-20 h-20 -translate-x-3 -translate-y-3 rounded-full border-2 border-cyan-400/40 animate-[pulse_3s_infinite] shadow-[inset_0_0_15px_rgba(34,211,238,0.2)]"
+                  style={{ animation: isTargeted ? 'shield-flare 0.3s ease-in-out infinite' : undefined }}
+                />
+              )}
+              
+              {isSettingCourse && (
+                <div className="absolute inset-0 w-24 h-24 -translate-x-1/4 -translate-y-1/4 rounded-full bg-amber-500/10 animate-ping pointer-events-none" />
+              )}
+              <div 
+                className={`w-14 h-14 rounded-full border-2 transition-all duration-300 flex items-center justify-center ${selectedId === p.id ? 'scale-125 border-white shadow-[0_0_40px_rgba(255,255,255,0.4)]' : 'border-white/10 opacity-80'} ${isSettingCourse ? 'border-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.3)]' : ''}`}
+                style={{ backgroundColor: PLAYER_COLORS[p.owner], boxShadow: `0 0 30px ${PLAYER_COLORS[p.owner]}44` }}
+              >
+                <span className="text-[10px] font-black text-white/20 select-none">{p.name[0]}</span>
+              </div>
+              <div className="mt-3 bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                <span className="text-[10px] font-black text-white uppercase tracking-widest">{p.name}</span>
+              </div>
+              <div className="flex gap-0.5 mt-1">
+                {Array.from({length: Math.floor(p.population)}).map((_, i) => (
+                  <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                ))}
+              </div>
             </div>
-            <div className="mt-3 bg-black/60 px-3 py-1 rounded-full border border-white/10 backdrop-blur-md opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-              <span className="text-[10px] font-black text-white uppercase tracking-widest">{p.name}</span>
-            </div>
-            <div className="flex gap-0.5 mt-1">
-              {Array.from({length: Math.floor(p.population)}).map((_, i) => (
-                <div key={i} className="w-1.5 h-1.5 rounded-full bg-white/40" />
-              ))}
-            </div>
-          </div>
-        ))}
+          );
+        })}
 
         {ships.map(s => {
           const pos = shipDisplayPositions[s.id] || { x: s.x, y: s.y };
+          const isTargeted = combatEvents.some(ev => Math.sqrt((ev.targetPos.x - pos.x)**2 + (ev.targetPos.y - pos.y)**2) < 20);
+          
           return (
             <div 
               key={s.id}
               onClick={(e) => { e.stopPropagation(); if (!moved.current) onSelect(s.id); }}
               className={`absolute -translate-x-1/2 -translate-y-1/2 pointer-events-auto cursor-pointer group p-4 z-10`}
-              style={{ left: pos.x, top: pos.y, transition: 'all 2s ease-in-out' }}
+              style={{ 
+                left: pos.x, 
+                top: pos.y, 
+                transition: 'all 2s ease-in-out',
+                animation: isTargeted ? 'ship-shake 0.1s linear infinite' : undefined
+              }}
             >
               {selectedId === s.id && (
                 <div className="absolute inset-0 border border-white/30 rounded-full animate-[spin_4s_linear_infinite]" />
               )}
-              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 shadow-xl transition-all ${selectedId === s.id ? 'scale-125 ring-4 ring-white/20' : 'hover:scale-110'}`} style={{ borderColor: PLAYER_COLORS[s.owner] }}>
+              <div 
+                className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 shadow-xl transition-all ${selectedId === s.id ? 'scale-125 ring-4 ring-white/20' : 'hover:scale-110'}`} 
+                style={{ 
+                  borderColor: isTargeted ? '#ff4444' : PLAYER_COLORS[s.owner],
+                  boxShadow: isTargeted ? '0 0 15px #ff0000' : `0 0 10px ${PLAYER_COLORS[s.owner]}22`
+                }}
+              >
                 <span className="text-[12px] -rotate-45">{s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
               <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-black/80 px-2 py-0.5 rounded border border-white/5 opacity-0 group-hover:opacity-100 whitespace-nowrap z-50">
