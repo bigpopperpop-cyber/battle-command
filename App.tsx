@@ -10,7 +10,7 @@ import HelpModal from './components/HelpModal';
 import SelectionPanel from './components/SelectionPanel';
 import InviteModal from './components/InviteModal';
 import { initializeApp, getApp, getApps, FirebaseApp } from 'firebase/app';
-import { getDatabase, ref, onValue, set, Database } from 'firebase/database';
+import { getDatabase, ref, onValue, set, Database, goOnline, goOffline } from 'firebase/database';
 
 const firebaseConfig = {
   databaseURL: "https://stellar-commander-default-rtdb.firebaseio.com", 
@@ -49,6 +49,10 @@ const App: React.FC = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSettingCourse, setIsSettingCourse] = useState(false);
   const [combatEvents, setCombatEvents] = useState<CombatEvent[]>([]);
+  
+  // Reliability States
+  const [isRelayOnline, setIsRelayOnline] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   // Deep Link Detection
   useEffect(() => {
@@ -65,13 +69,38 @@ const App: React.FC = () => {
     }
   }, []);
 
+  // Reliability: Connection Monitor
+  useEffect(() => {
+    if (!db || isConfigPlaceholder) return;
+    const connectedRef = ref(db, ".info/connected");
+    const unsubscribe = onValue(connectedRef, (snap) => {
+      if (snap.val() === true) {
+        setIsRelayOnline(true);
+      } else {
+        setIsRelayOnline(false);
+        // Attempt forced reconnection after a delay if still offline
+        setTimeout(() => {
+          if (db) goOnline(db);
+        }, 3000);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
   // Sync state from Firebase
   useEffect(() => {
     if (!db || !gameId || isConfigPlaceholder) return;
+    setIsSyncing(true);
     const stateRef = ref(db, `games/${gameId}/state`);
     const unsubscribe = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) setGameState(data);
+      if (data) {
+        setGameState(data);
+        setIsSyncing(false);
+      }
+    }, (err) => {
+      console.error("State Sync Failed:", err);
+      setIsSyncing(false);
     });
     return () => unsubscribe();
   }, [gameId]);
@@ -374,11 +403,19 @@ const App: React.FC = () => {
         </div>
       )}
       
-      <header className="h-20 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
-        <div className="flex items-center gap-4">
+      <header className="h-24 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
+        <div className="flex items-center gap-6">
           <div className="flex flex-col">
             <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole} HQ</span>
-            <span className="text-[9px] font-bold text-slate-500">RND {gameState.round}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold text-slate-500">RND {gameState.round}</span>
+              <div className="flex items-center gap-1 bg-slate-900/50 px-2 py-0.5 rounded-full border border-white/5">
+                 <div className={`w-1.5 h-1.5 rounded-full ${isRelayOnline ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-red-500 animate-pulse'}`} />
+                 <span className={`text-[7px] font-black uppercase ${isRelayOnline ? 'text-emerald-500/70' : 'text-red-500'}`}>
+                   {isRelayOnline ? (isSyncing ? 'Syncing...' : 'Relay Active') : 'Reconnecting...'}
+                 </span>
+              </div>
+            </div>
           </div>
           <div className="w-32 h-1 bg-slate-900 rounded-full overflow-hidden hidden md:block">
             <div 
@@ -423,6 +460,13 @@ const App: React.FC = () => {
         <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
         <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
       </main>
+      
+      {/* Visual Reconnect Overlay (Non-blocking but informative) */}
+      {!isRelayOnline && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-red-600/90 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-2xl z-[1000] animate-bounce">
+          ⚠️ Signal Lost - Attempting Subspace Re-link
+        </div>
+      )}
     </div>
   );
 };
