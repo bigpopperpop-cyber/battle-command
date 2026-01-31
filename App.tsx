@@ -39,7 +39,7 @@ const App: React.FC = () => {
   const [playerRole, setPlayerRole] = useState<Owner | null>(null);
   const [viewMode, setViewMode] = useState<'HOST' | 'PLAYER'>('HOST');
   
-  // Initialize with null to prevent generating a random map locally when joining
+  // Strict initialization: Start as null to ensure map data MUST come from Host or Generator
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isAdvisorOpen, setIsAdvisorOpen] = useState(false);
@@ -54,21 +54,21 @@ const App: React.FC = () => {
   // Reliability States
   const [isRelayOnline, setIsRelayOnline] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [initialSyncComplete, setInitialSyncComplete] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'IDLE' | 'CONNECTING' | 'SYNCED' | 'FAILED'>('IDLE');
 
-  // Deep Link Detection
+  // Deep Link Detection - Runs once on mount
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const urlGameId = params.get('gameId');
     const urlRole = params.get('role') as Owner | null;
 
     if (urlGameId && urlRole) {
+      console.log(`Deep link detected: Sector ${urlGameId} as ${urlRole}`);
       setGameId(urlGameId);
       setPlayerRole(urlRole);
       setViewMode('PLAYER');
       setHasStarted(true);
-      setInitialSyncComplete(false); 
-      // Do NOT generate a state here. Wait for Firebase.
+      setSyncStatus('CONNECTING');
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, []);
@@ -78,44 +78,30 @@ const App: React.FC = () => {
     if (!db || isConfigPlaceholder) return;
     const connectedRef = ref(db, ".info/connected");
     const unsubscribe = onValue(connectedRef, (snap) => {
-      if (snap.val() === true) {
-        setIsRelayOnline(true);
-      } else {
-        setIsRelayOnline(false);
-        setTimeout(() => {
-          if (db) goOnline(db);
-        }, 3000);
-      }
+      setIsRelayOnline(snap.val() === true);
     });
     return () => unsubscribe();
   }, []);
 
-  // Sync state from Firebase
+  // Sync state from Firebase - Authoritative loop
   useEffect(() => {
-    if (!db || !gameId || isConfigPlaceholder) {
-      // If no DB, we just rely on local state if we are host
-      if (gameId && viewMode === 'HOST' && !gameState) {
-        setGameState(generateInitialState(2, 0));
-        setInitialSyncComplete(true);
-      }
-      return;
-    }
+    if (!db || !gameId || isConfigPlaceholder) return;
     
     setIsSyncing(true);
     const stateRef = ref(db, `games/${gameId}/state`);
     const unsubscribe = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        console.log("Sector Data Received:", data.seed);
         setGameState(data);
         setIsSyncing(false);
-        setInitialSyncComplete(true);
-      } else {
-        console.warn("Searching for Sector Signature...");
+        setSyncStatus('SYNCED');
+      } else if (viewMode === 'PLAYER') {
+        console.warn("Sector data missing. Waiting for Host...");
+        setSyncStatus('CONNECTING');
       }
     }, (err) => {
-      console.error("State Sync Failed:", err);
-      setIsSyncing(false);
+      console.error("Relay Error:", err);
+      setSyncStatus('FAILED');
     });
     return () => unsubscribe();
   }, [gameId, viewMode]);
@@ -197,7 +183,7 @@ const App: React.FC = () => {
   };
 
   const handleSelect = (id: string) => {
-    if (!initialSyncComplete || !gameState) return;
+    if (!gameState) return;
 
     if (isSettingCourse && selectedId) {
       const selectedShip = gameState.ships.find(s => s.id === selectedId);
@@ -375,6 +361,7 @@ const App: React.FC = () => {
     return humanPlayers.filter(p => p !== 'P1').every(p => (gameState.readyPlayers || []).includes(p));
   }, [humanPlayers, gameState]);
 
+  // Main UI Loader
   if (!hasStarted) return (
     <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg">
       <div className="text-center p-10 glass-card rounded-[3rem] border-cyan-500/20 max-w-lg shadow-2xl animate-in fade-in zoom-in duration-700">
@@ -397,14 +384,15 @@ const App: React.FC = () => {
       </div>
       <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={(pc, ai, names, diff) => {
         const state = generateInitialState(pc, ai, undefined, names, diff);
-        setGameState(state);
+        const newFreq = Math.floor(100 + Math.random() * 899).toString();
+        
+        setGameId(newFreq);
         setPlayerRole('P1');
         setViewMode('HOST');
         setHasStarted(true);
         setIsNewGameOpen(false);
-        const newFreq = Math.floor(100 + Math.random() * 899).toString();
-        setGameId(newFreq);
-        setInitialSyncComplete(true);
+        setSyncStatus('SYNCED');
+
         if (db && !isConfigPlaceholder) {
           set(ref(db, `games/${newFreq}/state`), state);
           set(ref(db, `lobby/${newFreq}`), {
@@ -414,6 +402,7 @@ const App: React.FC = () => {
             playerCount: state.playerCount
           });
         }
+        setGameState(state);
       }} />
       <LobbyModal isOpen={isLobbyOpen} onClose={() => setIsLobbyOpen(false)} db={db} onJoin={(id, role) => {
         setGameId(id);
@@ -421,8 +410,7 @@ const App: React.FC = () => {
         setViewMode('PLAYER');
         setHasStarted(true);
         setIsLobbyOpen(false);
-        setInitialSyncComplete(false);
-        // Do NOT generate a local state. Wait for the sync from Firebase.
+        setSyncStatus('CONNECTING');
       }} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
@@ -430,11 +418,20 @@ const App: React.FC = () => {
 
   return (
     <div className="fixed inset-0 flex flex-col bg-[#020617] text-slate-100 overflow-hidden font-['Space_Grotesk'] safe-pt safe-pb">
-      {(!initialSyncComplete || !gameState) && viewMode === 'PLAYER' && (
-        <div className="fixed inset-0 z-[2000] bg-black/90 backdrop-blur-3xl flex flex-col items-center justify-center">
-           <div className="w-24 h-24 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin mb-8" />
-           <h2 className="text-2xl font-black italic text-cyan-500 uppercase tracking-widest">Establishing Bridge Link...</h2>
-           <p className="text-[10px] font-black text-slate-500 uppercase tracking-[0.5em] mt-4">Syncing Sector {gameId}</p>
+      {/* Synchronization Blocker */}
+      {(!gameState || syncStatus === 'CONNECTING') && (
+        <div className="fixed inset-0 z-[2000] bg-black/95 backdrop-blur-3xl flex flex-col items-center justify-center p-12 text-center">
+           <div className="relative mb-12">
+             <div className="w-32 h-32 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin" />
+             <div className="absolute inset-0 flex items-center justify-center text-2xl">📡</div>
+           </div>
+           <h2 className="text-3xl font-black italic text-cyan-500 uppercase tracking-widest mb-4">Command Link Handshake</h2>
+           <p className="text-[12px] font-black text-slate-400 uppercase tracking-[0.4em] max-w-xs leading-relaxed">
+             Syncing Sector Map Data for Frequency <span className="text-white">{gameId}</span>...
+           </p>
+           {syncStatus === 'FAILED' && (
+             <button onClick={() => window.location.reload()} className="mt-12 px-8 py-4 bg-red-600 rounded-2xl font-black uppercase text-xs">Retry Signal</button>
+           )}
         </div>
       )}
 
@@ -451,13 +448,13 @@ const App: React.FC = () => {
       <header className="h-24 flex items-center justify-between px-6 bg-slate-950/80 border-b border-white/5 backdrop-blur-2xl z-[100]">
         <div className="flex items-center gap-6">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole} HQ</span>
+            <span className="text-[10px] font-black text-cyan-500 uppercase tracking-widest italic">{playerRole || 'P1'} HQ</span>
             <div className="flex items-center gap-2">
-              <span className="text-[9px] font-bold text-slate-500">RND {gameState?.round || 1}</span>
+              <span className="text-[9px] font-bold text-slate-500">SEC: {gameId} // RND {gameState?.round || 1}</span>
               <div className="flex items-center gap-1 bg-slate-900/50 px-2 py-0.5 rounded-full border border-white/5">
                  <div className={`w-1.5 h-1.5 rounded-full ${isRelayOnline ? 'bg-emerald-500 shadow-[0_0_5px_rgba(16,185,129,0.5)]' : 'bg-red-500 animate-pulse'}`} />
                  <span className={`text-[7px] font-black uppercase ${isRelayOnline ? 'text-emerald-500/70' : 'text-red-500'}`}>
-                   {isRelayOnline ? (isSyncing ? 'Syncing...' : 'Relay Active') : 'Reconnecting...'}
+                   {isRelayOnline ? (isSyncing ? 'Syncing...' : 'Relay Active') : 'Signal Lost'}
                  </span>
               </div>
             </div>
@@ -478,7 +475,7 @@ const App: React.FC = () => {
              </div>
            ) : (
              <div className="flex items-center gap-2">
-               <button className="px-6 py-3 bg-cyan-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Orders Locked</button>
+               <div className="px-4 py-3 bg-cyan-900/30 border border-cyan-500/20 rounded-xl text-[8px] font-black text-cyan-500 uppercase tracking-widest">Wait for Admiral</div>
                {gameId && (
                  <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 bg-cyan-600/20 border border-cyan-500/40 rounded-xl flex items-center justify-center text-xl hover:bg-cyan-600/30 transition-all">📢</button>
                )}
@@ -523,12 +520,6 @@ const App: React.FC = () => {
           />
         )}
       </main>
-      
-      {!isRelayOnline && (
-        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-red-600/90 text-white px-4 py-2 rounded-full text-[9px] font-black uppercase tracking-widest shadow-2xl z-[1000] animate-bounce">
-          ⚠️ Signal Lost - Attempting Subspace Re-link
-        </div>
-      )}
     </div>
   );
 };
