@@ -427,9 +427,17 @@ const App: React.FC = () => {
 
         <div className="flex items-center gap-4">
            {viewMode === 'HOST' ? (
-             <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30">Execute Turn</button>
+             <div className="flex items-center gap-2">
+               <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all disabled:opacity-30">Execute Turn</button>
+               <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 bg-cyan-600/20 border border-cyan-500/40 rounded-xl flex items-center justify-center text-xl hover:bg-cyan-600/30 transition-all shadow-[0_0_15px_rgba(34,211,238,0.2)] animate-pulse" title="Recruit Allies">📢</button>
+             </div>
            ) : (
-             <button className="px-6 py-3 bg-cyan-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Orders Locked</button>
+             <div className="flex items-center gap-2">
+               <button className="px-6 py-3 bg-cyan-600 rounded-xl text-[10px] font-black uppercase tracking-widest">Orders Locked</button>
+               {gameId && (
+                 <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 bg-cyan-600/20 border border-cyan-500/40 rounded-xl flex items-center justify-center text-xl hover:bg-cyan-600/30 transition-all">📢</button>
+               )}
+             </div>
            )}
            <div className="bg-slate-900/80 px-4 py-3 rounded-xl border border-white/5 text-amber-500 font-bold text-xs flex items-center gap-2">💰 {gameState.playerCredits[playerRole || 'P1']}</div>
            <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900 rounded-xl flex items-center justify-center border border-white/5 text-xl">🤖</button>
@@ -459,6 +467,14 @@ const App: React.FC = () => {
         />
         <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />
         <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />
+        {gameId && (
+          <InviteModal 
+            isOpen={isInviteOpen} 
+            onClose={() => setIsInviteOpen(false)} 
+            frequency={gameId} 
+            gameState={gameState} 
+          />
+        )}
       </main>
       
       {/* Visual Reconnect Overlay (Non-blocking but informative) */}
