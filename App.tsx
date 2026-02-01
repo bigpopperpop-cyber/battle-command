@@ -26,6 +26,8 @@ export interface CombatEvent {
   color: string;
 }
 
+const DEFAULT_TECHS = { engine: 0, shields: 0, scanners: 0 };
+
 const App: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [playerRole, setPlayerRole] = useState<Owner | null>(null);
@@ -56,7 +58,7 @@ const App: React.FC = () => {
     return () => { unsubPresence(); unsubState(); if (db) { off(playersRef); off(stateRef); } };
   }, []);
 
-  const handleResetGame = async () => {
+  const handleResetGame = useCallback(async () => {
     if (!db || !window.confirm("ARE YOU SURE? THIS WILL TERMINATE THE GALAXY FOR EVERYONE.")) return;
     setIsProcessing(true);
     try {
@@ -66,7 +68,7 @@ const App: React.FC = () => {
     } finally {
       setIsProcessing(false);
     }
-  };
+  }, []);
 
   const handleIssueOrder = useCallback((type: string, payload?: any) => {
     if (!playerRole || !gameState || !db) return;
@@ -90,12 +92,10 @@ const App: React.FC = () => {
     
     if (type === 'RESEARCH_TECH') {
       const currentTechs = { 
-        engine: 0, 
-        shields: 0, 
-        scanners: 0, 
+        ...DEFAULT_TECHS, 
         ...(nextState.techs?.[playerRole] || {}) 
       };
-      const techKey = payload.tech as keyof typeof currentTechs;
+      const techKey = payload.tech as keyof typeof DEFAULT_TECHS;
       const cost = (currentTechs[techKey] + 1) * 1000;
       
       if (nextState.playerCredits[playerRole] < cost) return;
@@ -112,9 +112,11 @@ const App: React.FC = () => {
     }
 
     // Orders requiring selection
-    nextState.readyPlayers = (gameState.readyPlayers || []).filter(p => p !== playerRole);
     const selected = gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId);
     if (!selected) return;
+
+    // Reset ready status if player changes orders
+    nextState.readyPlayers = (gameState.readyPlayers || []).filter(p => p !== playerRole);
 
     if (type === 'RENAME_PLANET' && 'population' in selected) {
       nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
@@ -135,7 +137,7 @@ const App: React.FC = () => {
        if (nextState.playerCredits[playerRole] < cost) return;
        nextState.playerCredits[playerRole] -= cost;
        const newShip: Ship = {
-          id: `s-${playerRole}-${Date.now()}`,
+          id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: `${gameState.playerNames[playerRole]} ${shipType}`,
           type: shipType,
           owner: playerRole,
@@ -146,7 +148,8 @@ const App: React.FC = () => {
           hp: Math.floor(baseStats.hp * bonuses.strength),
           maxHp: Math.floor(baseStats.hp * bonuses.strength),
           attack: Math.floor(baseStats.attack * bonuses.strength),
-          speed: baseStats.speed, status: 'ORBITING'
+          speed: baseStats.speed, status: 'ORBITING',
+          isScrambled: false
        };
        nextState.ships = [...(gameState.ships || []), newShip];
     } else if (type === 'SET_SHIP_TARGET' && 'attack' in selected) {
@@ -157,7 +160,24 @@ const App: React.FC = () => {
     set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
   }, [playerRole, gameState, selectedId]);
 
-  const executeTurn = async () => {
+  // FIX: Declaring humanPlayers and allPlayersReady before executeTurn to prevent block-scoped variable usage before declaration.
+  const humanPlayers = useMemo(() => {
+    if (!gameState) return [];
+    const humans: Owner[] = [];
+    for (let i = 1; i <= (gameState.playerCount || 0); i++) {
+      const p = `P${i}` as Owner;
+      if (!gameState.aiPlayers?.includes(p)) humans.push(p);
+    }
+    return humans;
+  }, [gameState]);
+
+  const allPlayersReady = useMemo(() => {
+    if (!gameState) return false;
+    const allies = humanPlayers.filter(p => p !== 'P1');
+    return allies.every(p => (gameState.readyPlayers || []).includes(p));
+  }, [humanPlayers, gameState]);
+
+  const executeTurn = useCallback(async () => {
     if (isProcessing || !allPlayersReady || !gameState || !db) return;
     setIsProcessing(true);
     const events: CombatEvent[] = [];
@@ -165,66 +185,50 @@ const App: React.FC = () => {
     
     try {
       let nextPlanets = (gameState.planets || []).map(p => ({...p}));
-      // Fix: Explicitly type nextShips as Ship[] to avoid strict inference issues with targetPlanetId and isScrambled
       let nextShips: Ship[] = (gameState.ships || []).map(s => ({...s, isScrambled: false}));
       let nextCredits = { ...gameState.playerCredits };
       let nextEvents = (gameState.activeEvents || []).map(e => ({...e}));
 
-      // AI Logic Implementation
+      // AI Logic
       if (gameState.aiPlayers && gameState.aiPlayers.length > 0) {
         gameState.aiPlayers.forEach(ai => {
-          // AI: Build Infrastructure
           nextPlanets.filter(p => p.owner === ai).forEach(p => {
             if (nextCredits[ai] > 2000) {
               if (p.mines < MAX_MINES) { p.mines++; nextCredits[ai] -= 500; }
               else if (p.factories < MAX_FACTORIES) { p.factories++; nextCredits[ai] -= 800; }
             }
           });
-          
-          // AI: Move Idle Ships
           nextShips.filter(s => s.owner === ai && s.status === 'ORBITING').forEach(s => {
             const target = nextPlanets.find(p => p.owner === 'NEUTRAL' || p.owner !== ai);
-            if (target && Math.random() < 0.3) {
-              s.targetPlanetId = target.id;
-              s.status = 'MOVING';
-            }
+            if (target && Math.random() < 0.2) { s.targetPlanetId = target.id; s.status = 'MOVING'; }
           });
-
-          // AI: Build Ships
           const aiHome = nextPlanets.find(p => p.owner === ai);
-          if (aiHome && nextCredits[ai] > 1500 && Math.random() < 0.2) {
+          if (aiHome && nextCredits[ai] > 1500 && Math.random() < 0.1) {
              const type: ShipType = Math.random() < 0.7 ? 'WARSHIP' : 'FREIGHTER';
              const base = SHIP_STATS[type];
              nextCredits[ai] -= base.cost;
-             // Fix: Added missing isScrambled property to the new ship object to match inferred type of nextShips
              nextShips.push({
                id: `s-ai-${ai}-${Date.now()}-${Math.random()}`,
                name: `AI ${type}`, type, owner: ai, x: aiHome.x, y: aiHome.y,
                currentPlanetId: aiHome.id, targetPlanetId: null, cargo: 0, maxCargo: base.cargo,
                cargoPeople: 0, maxPeopleCargo: base.people, hp: base.hp, maxHp: base.hp,
-               attack: base.attack, speed: base.speed, status: 'ORBITING',
-               isScrambled: false
+               attack: base.attack, speed: base.speed, status: 'ORBITING', isScrambled: false
              });
           }
         });
       }
 
-      // Galactic Event Logic
-      if (Math.random() < 0.2 && nextEvents.length === 0) {
+      // Galactic Events
+      if (Math.random() < 0.1 && nextEvents.length === 0) {
         nextEvents.push({ type: 'COMET', x: 0, y: Math.random() * GRID_SIZE, targetX: GRID_SIZE, targetY: Math.random() * GRID_SIZE, roundStart: gameState.round });
       }
-      
       nextEvents = nextEvents.filter(e => {
         if (e.type === 'COMET') {
-          const dx = e.targetX! - e.x;
-          const dy = e.targetY! - e.y;
+          const dx = e.targetX! - e.x, dy = e.targetY! - e.y;
           const dist = Math.sqrt(dx*dx + dy*dy);
           if (dist < 50) return false;
-          e.x += (dx/dist) * 300;
-          e.y += (dy/dist) * 300;
-          nextShips.forEach(s => {
-            if (Math.sqrt((s.x-e.x)**2 + (s.y-e.y)**2) < 80) s.isScrambled = true;
-          });
+          e.x += (dx/dist) * 200; e.y += (dy/dist) * 200;
+          nextShips.forEach(s => { if (Math.sqrt((s.x-e.x)**2 + (s.y-e.y)**2) < 80) s.isScrambled = true; });
         }
         return true;
       });
@@ -236,9 +240,8 @@ const App: React.FC = () => {
           const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
           if (target) {
             const techEngine = gameState.techs?.[ship.owner]?.engine || 0;
-            const currentSpeed = ship.speed * (1 + techEngine * 0.1);
-            const dx = target.x - ship.x;
-            const dy = target.y - ship.y;
+            const currentSpeed = ship.speed * (1 + techEngine * 0.15);
+            const dx = target.x - ship.x, dy = target.y - ship.y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist <= currentSpeed) return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id, targetPlanetId: null };
             else return { ...ship, x: ship.x + (dx/dist) * currentSpeed, y: ship.y + (dy/dist) * currentSpeed, status: 'MOVING' };
@@ -247,7 +250,7 @@ const App: React.FC = () => {
         return ship;
       });
 
-      // Combat logic
+      // Combat
       const damageMap: Record<string, number> = {};
       nextPlanets.forEach(planet => {
         const shipsAtPlanet = nextShips.filter(s => s.currentPlanetId === planet.id && s.status === 'ORBITING');
@@ -255,7 +258,7 @@ const App: React.FC = () => {
            const invaders = shipsAtPlanet.filter(s => s.owner !== planet.owner);
            if (invaders.length > 0 && planet.batteries > 0) {
               const target = invaders[Math.floor(Math.random() * invaders.length)];
-              const batteryDamage = planet.batteries * 40 * (planet.specialization === 'FORTRESS' ? 2 : 1);
+              const batteryDamage = planet.batteries * 50 * (planet.specialization === 'FORTRESS' ? 2 : 1);
               damageMap[target.id] = (damageMap[target.id] || 0) + batteryDamage;
               events.push({ id: `bat-${planet.id}-${target.id}`, attackerPos: { x: planet.x, y: planet.y }, targetPos: { x: target.x, y: target.y }, color: PLAYER_COLORS[planet.owner] });
            }
@@ -267,8 +270,7 @@ const App: React.FC = () => {
               const enemies = shipsAtPlanet.filter(s => s.owner !== attacker.owner);
               if (enemies.length > 0) {
                 const target = enemies[0];
-                const bonuses = getEmpireBonuses(nextPlanets, attacker.owner);
-                const damage = attacker.attack + bonuses.firepowerBonus;
+                const damage = attacker.attack + getEmpireBonuses(nextPlanets, attacker.owner).firepowerBonus;
                 damageMap[target.id] = (damageMap[target.id] || 0) + damage;
                 events.push({ id: `ev-${attacker.id}-${target.id}`, attackerPos: { x: attacker.x, y: attacker.y }, targetPos: { x: target.x, y: target.y }, color: PLAYER_COLORS[attacker.owner] });
               }
@@ -280,12 +282,12 @@ const App: React.FC = () => {
       nextShips = nextShips.map(s => {
         if (damageMap[s.id]) {
           s.hp -= damageMap[s.id];
-          if (s.hp <= 0) newScraps.push({ id: `scrap-${s.id}`, x: s.x, y: s.y, color: PLAYER_COLORS[s.owner], timestamp: Date.now() });
+          if (s.hp <= 0) newScraps.push({ id: `scrap-${s.id}-${Date.now()}`, x: s.x, y: s.y, color: PLAYER_COLORS[s.owner], timestamp: Date.now() });
         }
         return s;
       }).filter(s => s.hp > 0);
 
-      // Economy & Colonization
+      // Economy
       nextPlanets = nextPlanets.map(p => {
         if (p.owner === 'NEUTRAL') {
           const colonist = nextShips.find(s => s.currentPlanetId === p.id && s.type === 'FREIGHTER');
@@ -293,8 +295,8 @@ const App: React.FC = () => {
           return p;
         }
         const invaders = nextShips.filter(s => s.currentPlanetId === p.id && s.owner !== p.owner && s.type === 'WARSHIP');
-        let nextPop = invaders.length > 0 ? Math.max(0, p.population - (invaders.length * 0.5)) : Math.min(MAX_PLANET_POPULATION, p.population + (p.specialization === 'INDUSTRIAL' ? 0.3 : 0.2));
-        nextCredits[p.owner] = (nextCredits[p.owner] || 0) + (p.mines * 50) + (p.factories * 20) + (Math.floor(nextPop) * 50);
+        let nextPop = invaders.length > 0 ? Math.max(0, p.population - (invaders.length * 0.4)) : Math.min(MAX_PLANET_POPULATION, p.population + (p.specialization === 'INDUSTRIAL' ? 0.3 : 0.2));
+        nextCredits[p.owner] = (nextCredits[p.owner] || 0) + (p.mines * 60) + (p.factories * 30) + (Math.floor(nextPop) * 80);
         return { ...p, population: nextPop, owner: nextPop <= 0 && invaders.length > 0 ? invaders[0].owner : p.owner };
       });
 
@@ -308,27 +310,28 @@ const App: React.FC = () => {
       };
       
       setCombatEvents(events);
-      setTimeout(() => setCombatEvents([]), 3000); // Clear lasers after 3 seconds
-      
+      setTimeout(() => setCombatEvents([]), 3000);
       await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), finalState);
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
-  };
+  }, [gameState, allPlayersReady, isProcessing]);
 
-  const humanPlayers = useMemo(() => {
-    if (!gameState) return [];
-    const humans: Owner[] = [];
-    for (let i = 1; i <= gameState.playerCount; i++) {
-      const p = `P${i}` as Owner;
-      if (!gameState.aiPlayers?.includes(p)) humans.push(p);
+  const currentSelection = useMemo(() => {
+    if (!gameState || !selectedId) return null;
+    return gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId) || null;
+  }, [gameState, selectedId]);
+
+  const currentTechs = useMemo(() => {
+    if (!playerRole || !gameState?.techs) return DEFAULT_TECHS;
+    return gameState.techs[playerRole] || DEFAULT_TECHS;
+  }, [playerRole, gameState]);
+
+  const handleMapSelect = useCallback((id: string) => {
+    if (isSettingCourse && selectedId?.startsWith('s-')) {
+      handleIssueOrder('SET_SHIP_TARGET', { planetId: id });
+    } else {
+      setSelectedId(id);
     }
-    return humans;
-  }, [gameState]);
-
-  const allPlayersReady = useMemo(() => {
-    if (!gameState) return false;
-    const allies = humanPlayers.filter(p => p !== 'P1');
-    return allies.every(p => (gameState.readyPlayers || []).includes(p));
-  }, [humanPlayers, gameState]);
+  }, [isSettingCourse, selectedId, handleIssueOrder]);
 
   if (!hasStarted) return (
     <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-white star-bg overflow-y-auto safe-pt safe-pb p-4">
@@ -395,14 +398,8 @@ const App: React.FC = () => {
         </div>
       </header>
       <main className="flex-1 relative overflow-hidden">
-        {gameState && <MapView planets={gameState.planets || []} ships={gameState.ships || []} selectedId={selectedId} onSelect={(id) => {
-          if (isSettingCourse && selectedId?.startsWith('s-')) {
-            handleIssueOrder('SET_SHIP_TARGET', { planetId: id });
-          } else {
-            setSelectedId(id);
-          }
-        }} isSettingCourse={isSettingCourse} combatEvents={combatEvents} playerRole={playerRole} activeEvents={gameState.activeEvents} combatScraps={gameState.combatScraps} emotes={gameState.emotes} />}
-        <SelectionPanel selection={gameState ? (gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId) || null) : null} onClose={() => setSelectedId(null)} playerRole={playerRole} credits={gameState?.playerCredits[playerRole || 'P1'] || 0} onIssueOrder={handleIssueOrder} isSettingCourse={isSettingCourse} ships={gameState?.ships || []} planets={gameState?.planets || []} techLevels={(playerRole && gameState?.techs?.[playerRole]) || { engine: 0, shields: 0, scanners: 0 }} />
+        {gameState && <MapView planets={gameState.planets || []} ships={gameState.ships || []} selectedId={selectedId} onSelect={handleMapSelect} isSettingCourse={isSettingCourse} combatEvents={combatEvents} playerRole={playerRole} activeEvents={gameState.activeEvents} combatScraps={gameState.combatScraps} emotes={gameState.emotes} />}
+        <SelectionPanel selection={currentSelection} onClose={() => setSelectedId(null)} playerRole={playerRole} credits={gameState?.playerCredits[playerRole || 'P1'] || 0} onIssueOrder={handleIssueOrder} isSettingCourse={isSettingCourse} ships={gameState?.ships || []} planets={gameState?.planets || []} techLevels={currentTechs} />
         {gameState && <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />}
         {gameState && <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />}
       </main>
