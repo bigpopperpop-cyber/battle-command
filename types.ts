@@ -6,6 +6,7 @@ export type PlanetSpecialization = 'NONE' | 'SHIPYARD' | 'FORTRESS' | 'INDUSTRIA
 export interface Planet {
   id: string;
   name: string;
+  customName?: string;
   x: number;
   y: number;
   owner: Owner;
@@ -41,6 +42,24 @@ export interface Ship {
   maxHp: number;
   speed: number;
   status: 'IDLE' | 'MOVING' | 'ORBITING';
+  isScrambled?: boolean;
+}
+
+export interface CombatScrap {
+  id: string;
+  x: number;
+  y: number;
+  color: string;
+  timestamp: number;
+}
+
+export interface GalacticEvent {
+  type: 'COMET' | 'SUPERNOVA';
+  x: number;
+  y: number;
+  targetX?: number;
+  targetY?: number;
+  roundStart: number;
 }
 
 export interface GameState {
@@ -58,4 +77,8 @@ export interface GameState {
   logs: string[];
   isHost?: boolean;
   winner?: Owner | null;
+  emotes?: Record<string, { text: string, timestamp: number }>;
+  techs?: Record<string, { engine: number, shields: number, scanners: number }>;
+  activeEvents?: GalacticEvent[];
+  combatScraps?: CombatScrap[];
 }

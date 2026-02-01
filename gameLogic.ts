@@ -3,7 +3,7 @@ import { Planet, Ship, GameState, Owner, ShipType, AiDifficulty, PlanetSpecializ
 
 export const GRID_SIZE = 1200;
 export const PLANET_COUNT = 24;
-export const MIN_PLANET_DISTANCE = 180;
+export const MIN_PLANET_DISTANCE = 200;
 export const MAX_PLANET_POPULATION = 5;
 export const MAX_FACTORIES = 5;
 export const MAX_MINES = 10;
