@@ -56,6 +56,18 @@ const App: React.FC = () => {
     return () => { unsubPresence(); unsubState(); if (db) { off(playersRef); off(stateRef); } };
   }, []);
 
+  const handleResetGame = async () => {
+    if (!db || !window.confirm("ARE YOU SURE? THIS WILL TERMINATE THE GALAXY FOR EVERYONE.")) return;
+    setIsProcessing(true);
+    try {
+      await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), null);
+    } catch (e) {
+      console.error("Reset failed:", e);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleIssueOrder = useCallback((type: string, payload?: any) => {
     if (!playerRole || !gameState || !db) return;
     const nextState = { ...gameState };
@@ -67,8 +79,6 @@ const App: React.FC = () => {
       return;
     }
     if (type === 'RESEARCH_TECH') {
-      // Fix: Properly access and update tech levels by isolating the player's specific tech record first.
-      // This resolves the error where we were incorrectly indexing the Record with tech names.
       const currentTechs = { 
         engine: 0, 
         shields: 0, 
@@ -148,12 +158,10 @@ const App: React.FC = () => {
       let nextCredits = { ...gameState.playerCredits };
       let nextEvents = (gameState.activeEvents || []).map(e => ({...e}));
 
-      // Galactic Event Logic: Chance to spawn comet
       if (Math.random() < 0.2 && nextEvents.length === 0) {
         nextEvents.push({ type: 'COMET', x: 0, y: Math.random() * GRID_SIZE, targetX: GRID_SIZE, targetY: Math.random() * GRID_SIZE, roundStart: gameState.round });
       }
       
-      // Comet Movement & Scrambling
       nextEvents = nextEvents.filter(e => {
         if (e.type === 'COMET') {
           const dx = e.targetX! - e.x;
@@ -169,7 +177,6 @@ const App: React.FC = () => {
         return true;
       });
 
-      // Move ships (respect Tech: Engine)
       nextShips = nextShips.map(ship => {
         if (ship.isScrambled) return ship;
         if (ship.targetPlanetId) {
@@ -307,7 +314,22 @@ const App: React.FC = () => {
             {['👋', '⚔️', 'GG'].map(e => <button key={e} onClick={() => handleIssueOrder('SEND_EMOTE', { text: e })} className="w-8 h-8 bg-slate-900 rounded-lg flex items-center justify-center text-xs border border-white/5">{e}</button>)}
           </div>
           {playerRole === 'P1' ? (
-            <button onClick={executeTurn} disabled={isProcessing || !allPlayersReady} className="px-3 py-2 bg-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest shadow-lg">GO</button>
+            <div className="flex items-center gap-1.5">
+               <button 
+                 onClick={handleResetGame} 
+                 disabled={isProcessing} 
+                 className="px-3 py-2 bg-rose-600/20 text-rose-400 border border-rose-500/30 rounded-lg text-[8px] font-black uppercase tracking-widest whitespace-nowrap"
+               >
+                 Reset
+               </button>
+               <button 
+                 onClick={executeTurn} 
+                 disabled={isProcessing || !allPlayersReady} 
+                 className="px-3 py-2 bg-emerald-600 rounded-lg text-[8px] font-black uppercase tracking-widest shadow-lg"
+               >
+                 GO
+               </button>
+            </div>
           ) : (
             <button onClick={() => handleIssueOrder('COMMIT')} disabled={(gameState?.readyPlayers || []).includes(playerRole!)} className={`px-3 py-2 rounded-lg text-[8px] font-black uppercase tracking-widest ${(gameState?.readyPlayers || []).includes(playerRole!) ? 'bg-emerald-900/40 text-emerald-500' : 'bg-cyan-600 animate-pulse'}`}>{(gameState?.readyPlayers || []).includes(playerRole!) ? 'LOCKED' : 'COMMIT'}</button>
           )}
