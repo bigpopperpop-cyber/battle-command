@@ -96,7 +96,8 @@ export const generateInitialState = (
       batteries: owner !== 'NEUTRAL' ? 1 : 0,
       defense: maxDef,
       maxDefense: maxDef,
-      specialization: 'NONE'
+      specialization: 'NONE',
+      autoDefense: false
     });
   }
 

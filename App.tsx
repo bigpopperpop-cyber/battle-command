@@ -118,6 +118,8 @@ const App: React.FC = () => {
       if (nextState.playerCredits[playerRole] < 1500) return;
       nextState.playerCredits[playerRole] -= 1500;
       nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, specialization: payload.spec } : p);
+    } else if (type === 'TOGGLE_AUTO_DEFENSE' && 'population' in selected) {
+      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, autoDefense: !p.autoDefense } : p);
     } else if (type === 'BUILD_SHIP' && 'population' in selected) {
        const shipType = payload.type as ShipType;
        const baseStats = SHIP_STATS[shipType];
@@ -201,6 +203,44 @@ const App: React.FC = () => {
       let nextPlanets = (gameState.planets || []).map(p => ({...p}));
       let nextShips = (gameState.ships || []).map(s => ({...s}));
       let nextCredits = { ...gameState.playerCredits };
+
+      // Process Automated Defense: Planets build warships automatically if an enemy is detected
+      nextPlanets.forEach(planet => {
+        if (planet.owner !== 'NEUTRAL' && planet.autoDefense && planet.factories > 0) {
+          const invaders = nextShips.filter(s => s.currentPlanetId === planet.id && s.owner !== planet.owner);
+          if (invaders.length > 0) {
+            const shipType = 'WARSHIP' as ShipType;
+            const baseStats = SHIP_STATS[shipType];
+            const bonuses = getEmpireBonuses(nextPlanets, planet.owner);
+            const isShipyard = planet.specialization === 'SHIPYARD';
+            const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (isShipyard ? 0.25 : 0)));
+            
+            if (nextCredits[planet.owner] >= cost) {
+              nextCredits[planet.owner] -= cost;
+              const newShip: Ship = {
+                id: `s-auto-${planet.owner}-${Date.now()}-${Math.random()}`,
+                name: `Defense Unit ${planet.name}`,
+                type: shipType,
+                owner: planet.owner,
+                x: planet.x,
+                y: planet.y,
+                currentPlanetId: planet.id,
+                targetPlanetId: null,
+                cargo: 0,
+                maxCargo: baseStats.cargo,
+                cargoPeople: 0,
+                maxPeopleCargo: bonuses.warshipCapacity,
+                hp: Math.floor(baseStats.hp * bonuses.strength),
+                maxHp: Math.floor(baseStats.hp * bonuses.strength),
+                attack: Math.floor(baseStats.attack * bonuses.strength),
+                speed: baseStats.speed,
+                status: 'ORBITING'
+              };
+              nextShips.push(newShip);
+            }
+          }
+        }
+      });
 
       nextShips = nextShips.map(ship => {
         if (ship.targetPlanetId) {

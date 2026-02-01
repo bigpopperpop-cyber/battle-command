@@ -17,6 +17,7 @@ export interface Planet {
   defense: number; 
   maxDefense: number;
   specialization: PlanetSpecialization;
+  autoDefense: boolean;
 }
 
 export type ShipType = 'SCOUT' | 'FREIGHTER' | 'WARSHIP';

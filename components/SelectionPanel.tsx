@@ -74,6 +74,19 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
 
             {isMine && (
               <div className="space-y-4">
+                <div className="flex items-center justify-between p-3 bg-slate-950/40 rounded-xl border border-white/5">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-black text-white uppercase tracking-wider">Automated Defense</span>
+                    <span className="text-[8px] text-slate-500 uppercase">Auto-launch warships at intruders</span>
+                  </div>
+                  <button 
+                    onClick={() => onIssueOrder('TOGGLE_AUTO_DEFENSE')}
+                    className={`w-12 h-6 rounded-full transition-all relative ${selection.autoDefense ? 'bg-emerald-600 shadow-[0_0_10px_rgba(16,185,129,0.4)]' : 'bg-slate-800'}`}
+                  >
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${selection.autoDefense ? 'left-7' : 'left-1'}`} />
+                  </button>
+                </div>
+
                 <div className="space-y-1.5 md:space-y-2">
                    <p className="text-[8px] md:text-[9px] font-black text-slate-500 uppercase tracking-widest">Construction</p>
                    <div className="grid grid-cols-2 gap-2">
