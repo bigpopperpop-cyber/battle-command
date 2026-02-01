@@ -72,12 +72,22 @@ const App: React.FC = () => {
     if (!playerRole || !gameState || !db) return;
     const nextState = { ...gameState };
     
+    // Core non-selection orders
     if (type === 'SET_COURSE') { setIsSettingCourse(true); return; }
     if (type === 'SEND_EMOTE') {
       nextState.emotes = { ...(nextState.emotes || {}), [playerRole]: { text: payload.text, timestamp: Date.now() } };
       set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
       return;
     }
+    if (type === 'COMMIT') {
+      const currentReady = nextState.readyPlayers || [];
+      if (!currentReady.includes(playerRole)) {
+        nextState.readyPlayers = [...currentReady, playerRole];
+        set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
+      }
+      return;
+    }
+    
     if (type === 'RESEARCH_TECH') {
       const currentTechs = { 
         engine: 0, 
@@ -101,6 +111,7 @@ const App: React.FC = () => {
       return;
     }
 
+    // Orders requiring selection
     nextState.readyPlayers = (gameState.readyPlayers || []).filter(p => p !== playerRole);
     const selected = gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId);
     if (!selected) return;
@@ -115,8 +126,6 @@ const App: React.FC = () => {
       if (nextState.playerCredits[playerRole] < 800) return;
       nextState.playerCredits[playerRole] -= 800;
       nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
-    } else if (type === 'TOGGLE_AUTO_DEFENSE' && 'population' in selected) {
-      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, autoDefense: !p.autoDefense } : p);
     } else if (type === 'BUILD_SHIP' && 'population' in selected) {
        const shipType = payload.type as ShipType;
        const baseStats = SHIP_STATS[shipType];
@@ -140,9 +149,11 @@ const App: React.FC = () => {
           speed: baseStats.speed, status: 'ORBITING'
        };
        nextState.ships = [...(gameState.ships || []), newShip];
-    } else if (type === 'COMMIT') {
-      if (!nextState.readyPlayers.includes(playerRole)) nextState.readyPlayers = [...nextState.readyPlayers, playerRole];
+    } else if (type === 'SET_SHIP_TARGET' && 'attack' in selected) {
+      nextState.ships = (gameState.ships || []).map(s => s.id === selected.id ? { ...s, targetPlanetId: payload.planetId, status: 'MOVING' } : s);
+      setIsSettingCourse(false);
     }
+    
     set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
   }, [playerRole, gameState, selectedId]);
 
@@ -154,10 +165,51 @@ const App: React.FC = () => {
     
     try {
       let nextPlanets = (gameState.planets || []).map(p => ({...p}));
-      let nextShips = (gameState.ships || []).map(s => ({...s, isScrambled: false}));
+      // Fix: Explicitly type nextShips as Ship[] to avoid strict inference issues with targetPlanetId and isScrambled
+      let nextShips: Ship[] = (gameState.ships || []).map(s => ({...s, isScrambled: false}));
       let nextCredits = { ...gameState.playerCredits };
       let nextEvents = (gameState.activeEvents || []).map(e => ({...e}));
 
+      // AI Logic Implementation
+      if (gameState.aiPlayers && gameState.aiPlayers.length > 0) {
+        gameState.aiPlayers.forEach(ai => {
+          // AI: Build Infrastructure
+          nextPlanets.filter(p => p.owner === ai).forEach(p => {
+            if (nextCredits[ai] > 2000) {
+              if (p.mines < MAX_MINES) { p.mines++; nextCredits[ai] -= 500; }
+              else if (p.factories < MAX_FACTORIES) { p.factories++; nextCredits[ai] -= 800; }
+            }
+          });
+          
+          // AI: Move Idle Ships
+          nextShips.filter(s => s.owner === ai && s.status === 'ORBITING').forEach(s => {
+            const target = nextPlanets.find(p => p.owner === 'NEUTRAL' || p.owner !== ai);
+            if (target && Math.random() < 0.3) {
+              s.targetPlanetId = target.id;
+              s.status = 'MOVING';
+            }
+          });
+
+          // AI: Build Ships
+          const aiHome = nextPlanets.find(p => p.owner === ai);
+          if (aiHome && nextCredits[ai] > 1500 && Math.random() < 0.2) {
+             const type: ShipType = Math.random() < 0.7 ? 'WARSHIP' : 'FREIGHTER';
+             const base = SHIP_STATS[type];
+             nextCredits[ai] -= base.cost;
+             // Fix: Added missing isScrambled property to the new ship object to match inferred type of nextShips
+             nextShips.push({
+               id: `s-ai-${ai}-${Date.now()}-${Math.random()}`,
+               name: `AI ${type}`, type, owner: ai, x: aiHome.x, y: aiHome.y,
+               currentPlanetId: aiHome.id, targetPlanetId: null, cargo: 0, maxCargo: base.cargo,
+               cargoPeople: 0, maxPeopleCargo: base.people, hp: base.hp, maxHp: base.hp,
+               attack: base.attack, speed: base.speed, status: 'ORBITING',
+               isScrambled: false
+             });
+          }
+        });
+      }
+
+      // Galactic Event Logic
       if (Math.random() < 0.2 && nextEvents.length === 0) {
         nextEvents.push({ type: 'COMET', x: 0, y: Math.random() * GRID_SIZE, targetX: GRID_SIZE, targetY: Math.random() * GRID_SIZE, roundStart: gameState.round });
       }
@@ -177,6 +229,7 @@ const App: React.FC = () => {
         return true;
       });
 
+      // Move ships
       nextShips = nextShips.map(ship => {
         if (ship.isScrambled) return ship;
         if (ship.targetPlanetId) {
@@ -194,6 +247,7 @@ const App: React.FC = () => {
         return ship;
       });
 
+      // Combat logic
       const damageMap: Record<string, number> = {};
       nextPlanets.forEach(planet => {
         const shipsAtPlanet = nextShips.filter(s => s.currentPlanetId === planet.id && s.status === 'ORBITING');
@@ -231,6 +285,7 @@ const App: React.FC = () => {
         return s;
       }).filter(s => s.hp > 0);
 
+      // Economy & Colonization
       nextPlanets = nextPlanets.map(p => {
         if (p.owner === 'NEUTRAL') {
           const colonist = nextShips.find(s => s.currentPlanetId === p.id && s.type === 'FREIGHTER');
@@ -251,7 +306,10 @@ const App: React.FC = () => {
         playerCredits: nextCredits, readyPlayers: [], winner, 
         activeEvents: nextEvents, combatScraps: [...(gameState.combatScraps || []).filter(s => Date.now() - s.timestamp < 10000), ...newScraps]
       };
+      
       setCombatEvents(events);
+      setTimeout(() => setCombatEvents([]), 3000); // Clear lasers after 3 seconds
+      
       await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), finalState);
     } catch (e) { console.error(e); } finally { setIsProcessing(false); }
   };
@@ -337,8 +395,14 @@ const App: React.FC = () => {
         </div>
       </header>
       <main className="flex-1 relative overflow-hidden">
-        {gameState && <MapView planets={gameState.planets || []} ships={gameState.ships || []} selectedId={selectedId} onSelect={(id) => setSelectedId(id)} isSettingCourse={isSettingCourse} combatEvents={combatEvents} playerRole={playerRole} activeEvents={gameState.activeEvents} combatScraps={gameState.combatScraps} emotes={gameState.emotes} />}
-        <SelectionPanel selection={gameState ? (gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId) || null) : null} onClose={() => setSelectedId(null)} playerRole={playerRole} credits={gameState?.playerCredits[playerRole || 'P1'] || 0} onIssueOrder={handleIssueOrder} isSettingCourse={isSettingCourse} ships={gameState?.ships || []} planets={gameState?.planets || []} techLevels={gameState?.techs?.[playerRole!] || { engine: 0, shields: 0, scanners: 0 }} />
+        {gameState && <MapView planets={gameState.planets || []} ships={gameState.ships || []} selectedId={selectedId} onSelect={(id) => {
+          if (isSettingCourse && selectedId?.startsWith('s-')) {
+            handleIssueOrder('SET_SHIP_TARGET', { planetId: id });
+          } else {
+            setSelectedId(id);
+          }
+        }} isSettingCourse={isSettingCourse} combatEvents={combatEvents} playerRole={playerRole} activeEvents={gameState.activeEvents} combatScraps={gameState.combatScraps} emotes={gameState.emotes} />}
+        <SelectionPanel selection={gameState ? (gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId) || null) : null} onClose={() => setSelectedId(null)} playerRole={playerRole} credits={gameState?.playerCredits[playerRole || 'P1'] || 0} onIssueOrder={handleIssueOrder} isSettingCourse={isSettingCourse} ships={gameState?.ships || []} planets={gameState?.planets || []} techLevels={(playerRole && gameState?.techs?.[playerRole]) || { engine: 0, shields: 0, scanners: 0 }} />
         {gameState && <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />}
         {gameState && <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />}
       </main>
