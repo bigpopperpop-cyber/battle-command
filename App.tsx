@@ -48,16 +48,27 @@ const App: React.FC = () => {
     const presenceRef = ref(db, `lobbies/${FAMILY_GALAXY_ID}/players/${myPresenceId}`);
     onDisconnect(presenceRef).remove();
     set(presenceRef, { active: true, joinedAt: Date.now() });
+    
     const playersRef = ref(db, `lobbies/${FAMILY_GALAXY_ID}/players`);
     const stateRef = ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`);
+    
     const unsubPresence = onValue(playersRef, (snap) => setOnlineCommanders(Object.keys(snap.val() || {}).length));
+    
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
-      if (data) setGameState(data);
-      else { setGameState(null); setHasStarted(false); }
+      // RESILIENCE: Only reset the game if the data is explicitly null AND we aren't currently hasStarted
+      // This prevents "flickering" or accidental resets during heavy write operations
+      if (data) {
+        setGameState(data);
+      } else if (!isProcessing) {
+        // Only reset if we aren't in the middle of a turn write
+        setGameState(null);
+        setHasStarted(false);
+      }
     });
+
     return () => { unsubPresence(); unsubState(); if (db) { off(playersRef); off(stateRef); } };
-  }, []);
+  }, [isProcessing]);
 
   const handleResetGame = useCallback(async () => {
     if (!db || !window.confirm("ARE YOU SURE? THIS WILL TERMINATE THE GALAXY FOR EVERYONE.")) return;
@@ -94,7 +105,7 @@ const App: React.FC = () => {
       const currentTechs = { ...DEFAULT_TECHS, ...(nextState.techs?.[playerRole] || {}) };
       const techKey = payload.tech as keyof typeof DEFAULT_TECHS;
       const cost = (currentTechs[techKey] + 1) * 1000;
-      if (nextState.playerCredits[playerRole] < cost) return;
+      if ((nextState.playerCredits[playerRole] || 0) < cost) return;
       nextState.playerCredits[playerRole] -= cost;
       currentTechs[techKey] += 1;
       nextState.techs = { ...(nextState.techs || {}), [playerRole]: currentTechs };
@@ -102,7 +113,7 @@ const App: React.FC = () => {
       return;
     }
 
-    const selected = gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId);
+    const selected = (gameState.planets || []).find(p => p.id === selectedId) || (gameState.ships || []).find(s => s.id === selectedId);
     if (!selected) return;
 
     nextState.readyPlayers = (gameState.readyPlayers || []).filter(p => p !== playerRole);
@@ -110,24 +121,24 @@ const App: React.FC = () => {
     if (type === 'RENAME_PLANET' && 'population' in selected) {
       nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
     } else if (type === 'BUILD_MINE' && 'population' in selected) {
-      if (nextState.playerCredits[playerRole] < 500) return;
+      if ((nextState.playerCredits[playerRole] || 0) < 500) return;
       nextState.playerCredits[playerRole] -= 500;
-      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, mines: p.mines + 1 } : p);
+      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
     } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
-      if (nextState.playerCredits[playerRole] < 800) return;
+      if ((nextState.playerCredits[playerRole] || 0) < 800) return;
       nextState.playerCredits[playerRole] -= 800;
-      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, factories: p.factories + 1 } : p);
+      nextState.planets = (gameState.planets || []).map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
     } else if (type === 'BUILD_SHIP' && 'population' in selected) {
        const shipType = payload.type as ShipType;
        const baseStats = SHIP_STATS[shipType];
        const bonuses = getEmpireBonuses(gameState.planets || [], playerRole);
        const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (selected.specialization === 'SHIPYARD' ? 0.25 : 0)));
-       if (nextState.playerCredits[playerRole] < cost) return;
+       if ((nextState.playerCredits[playerRole] || 0) < cost) return;
        nextState.playerCredits[playerRole] -= cost;
        const newShip: Ship = {
           id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: `${gameState.playerNames[playerRole]} ${shipType}`,
-          type: shipType, owner: playerRole, x: selected.x, y: selected.y,
+          type: shipType, owner: playerRole, x: selected.x || 0, y: selected.y || 0,
           currentPlanetId: selected.id, targetPlanetId: null,
           cargo: 0, maxCargo: baseStats.cargo, cargoPeople: 0,
           maxPeopleCargo: shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people,
@@ -171,16 +182,17 @@ const App: React.FC = () => {
       const events: CombatEvent[] = [];
       const newScraps: CombatScrap[] = [];
 
-      // Pre-calculate bonuses for turn resolution to avoid O(N^2) lookups
-      const allOwners = Array.from(new Set([...nextPlanets.map(p => p.owner), ...nextShips.map(s => s.owner)]));
       const empireBonuses: Record<string, any> = {};
-      allOwners.forEach(o => { if (o !== 'NEUTRAL') empireBonuses[o] = getEmpireBonuses(nextPlanets, o); });
+      const owners = new Set<Owner>();
+      nextPlanets.forEach(p => owners.add(p.owner));
+      nextShips.forEach(s => owners.add(s.owner));
+      owners.forEach(o => { if (o !== 'NEUTRAL') empireBonuses[o] = getEmpireBonuses(nextPlanets, o); });
 
       // AI Logic
-      if (gameState.aiPlayers && gameState.aiPlayers.length > 0) {
+      if (gameState.aiPlayers) {
         gameState.aiPlayers.forEach(ai => {
           nextPlanets.filter(p => p.owner === ai).forEach(p => {
-            if (nextCredits[ai] > 2000) {
+            if ((nextCredits[ai] || 0) > 2000) {
               if (p.mines < MAX_MINES) { p.mines++; nextCredits[ai] -= 500; }
               else if (p.factories < MAX_FACTORIES) { p.factories++; nextCredits[ai] -= 800; }
             }
@@ -192,13 +204,13 @@ const App: React.FC = () => {
         });
       }
 
-      // Movement & Events
+      // Movement & Random Events
       if (Math.random() < 0.1 && nextEvents.length === 0) {
         nextEvents.push({ type: 'COMET', x: 0, y: Math.random() * GRID_SIZE, targetX: GRID_SIZE, targetY: Math.random() * GRID_SIZE, roundStart: gameState.round });
       }
       nextEvents = nextEvents.filter(e => {
         if (e.type === 'COMET') {
-          const dx = e.targetX! - e.x, dy = e.targetY! - e.y;
+          const dx = (e.targetX || 0) - e.x, dy = (e.targetY || 0) - e.y;
           const dist = Math.sqrt(dx*dx + dy*dy);
           if (dist < 50) return false;
           e.x += (dx/dist) * 200; e.y += (dy/dist) * 200;
@@ -212,14 +224,14 @@ const App: React.FC = () => {
         const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
         if (!target) return ship;
         const speedBonus = (gameState.techs?.[ship.owner]?.engine || 0) * 0.15;
-        const currentSpeed = ship.speed * (1 + speedBonus);
+        const currentSpeed = (ship.speed || 100) * (1 + speedBonus);
         const dx = target.x - ship.x, dy = target.y - ship.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist <= currentSpeed) return { ...ship, x: target.x, y: target.y, status: 'ORBITING', currentPlanetId: target.id, targetPlanetId: null };
         return { ...ship, x: ship.x + (dx/dist) * currentSpeed, y: ship.y + (dy/dist) * currentSpeed, status: 'MOVING' };
       });
 
-      // Unified Combat Resolution
+      // Combat
       const damageMap: Record<string, number> = {};
       nextPlanets.forEach(planet => {
         const shipsAtPlanet = nextShips.filter(s => s.currentPlanetId === planet.id && s.status === 'ORBITING');
@@ -231,8 +243,8 @@ const App: React.FC = () => {
               events.push({ id: `bat-${planet.id}-${target.id}`, attackerPos: { x: planet.x, y: planet.y }, targetPos: { x: target.x, y: target.y }, color: PLAYER_COLORS[planet.owner], owner: planet.owner });
            }
         }
-        const owners = Array.from(new Set(shipsAtPlanet.map(s => s.owner)));
-        if (owners.length > 1) {
+        const orbitingOwners = new Set(shipsAtPlanet.map(s => s.owner));
+        if (orbitingOwners.size > 1) {
           shipsAtPlanet.forEach(attacker => {
             if (attacker.attack > 0) {
               const enemies = shipsAtPlanet.filter(s => s.owner !== attacker.owner);
@@ -255,7 +267,7 @@ const App: React.FC = () => {
         return s;
       }).filter(s => s.hp > 0);
 
-      // Economy & Victory
+      // Economy
       nextPlanets.forEach(p => {
         if (p.owner === 'NEUTRAL') {
           const colonist = nextShips.find(s => s.currentPlanetId === p.id && s.type === 'FREIGHTER');
@@ -272,7 +284,7 @@ const App: React.FC = () => {
         }
       });
 
-      const winners = Array.from(new Set(nextPlanets.filter(p => p.owner !== 'NEUTRAL').map(p => p.owner))) as Owner[];
+      const winners = Array.from(new Set(nextPlanets.filter(p => p.owner !== 'NEUTRAL').map(p => p.owner)));
       const winner = winners.find(o => nextPlanets.filter(p => p.owner === o).length >= PLANET_COUNT * 0.6) || null;
 
       const finalState: GameState = { 
@@ -289,7 +301,7 @@ const App: React.FC = () => {
 
   const currentSelection = useMemo(() => {
     if (!gameState || !selectedId) return null;
-    return gameState.planets?.find(p => p.id === selectedId) || gameState.ships?.find(s => s.id === selectedId) || null;
+    return (gameState.planets || []).find(p => p.id === selectedId) || (gameState.ships || []).find(s => s.id === selectedId) || null;
   }, [gameState, selectedId]);
 
   const handleMapSelect = useCallback((id: string) => {
@@ -307,7 +319,7 @@ const App: React.FC = () => {
             <button onClick={() => setIsNewGameOpen(true)} className="w-full py-5 bg-cyan-600 rounded-3xl font-black text-xs md:text-sm uppercase tracking-widest shadow-xl">Initialize Galaxy</button>
           ) : (
             <div className="grid grid-cols-2 gap-2">
-              {Array.from({ length: gameState.playerCount }).map((_, i) => {
+              {Array.from({ length: gameState.playerCount || 0 }).map((_, i) => {
                 const pId = `P${i+1}` as Owner;
                 if (gameState.aiPlayers?.includes(pId)) return null;
                 return <button key={pId} onClick={() => { setPlayerRole(pId); setHasStarted(true); }} className="py-4 bg-slate-900 border border-white/10 rounded-2xl font-black text-[10px] uppercase">Join {pId}</button>;
