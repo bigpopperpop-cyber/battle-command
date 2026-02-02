@@ -1,6 +1,6 @@
 
-import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Planet, Ship, Owner, GalacticEvent, CombatScrap } from '../types';
+import React, { useState, useRef, useEffect, useMemo, memo } from 'react';
+import { Planet, Ship, GalacticEvent, CombatScrap } from '../types';
 import { GRID_SIZE, PLAYER_COLORS } from '../gameLogic';
 import { CombatEvent } from '../App';
 
@@ -16,7 +16,7 @@ interface MapViewProps {
   emotes?: Record<string, { text: string, timestamp: number }>;
 }
 
-const MapView: React.FC<MapViewProps> = ({ 
+const MapView: React.FC<MapViewProps> = memo(({ 
   planets = [], ships = [], selectedId, onSelect, isSettingCourse, 
   combatEvents = [], activeEvents = [], combatScraps = [], emotes = {} 
 }) => {
@@ -153,20 +153,20 @@ const MapView: React.FC<MapViewProps> = ({
                 if (!moved.current) onSelect(p.id); 
               }} 
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20 cursor-pointer pointer-events-auto" 
-              style={{ left: p.x, top: p.y, width: 140, height: 140, padding: 20 }}
+              style={{ left: p.x, top: p.y, width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
-              <div className="relative flex flex-col items-center w-full h-full justify-center">
+              <div className="relative flex flex-col items-center w-full h-full justify-center pointer-events-none">
                 {showEmote && <div className="absolute -top-16 bg-white text-black px-4 py-1 rounded-2xl font-black text-xl shadow-2xl animate-bounce whitespace-nowrap z-50">{emote.text}</div>}
                 
                 <div 
                   className={`w-14 h-14 rounded-full border-2 transition-all flex items-center justify-center shrink-0 ${isSelected ? 'scale-110 border-white ring-4 ring-white/30 ring-offset-2 ring-offset-black' : 'border-white/10'}`} 
                   style={{ backgroundColor: PLAYER_COLORS[p.owner] || '#444' }}
                 >
-                  <span className="text-sm font-black text-white pointer-events-none">{p.customName?.[0] || p.name[0] || '?'}</span>
+                  <span className="text-sm font-black text-white">{p.customName?.[0] || p.name[0] || '?'}</span>
                 </div>
 
                 <div className="mt-4 bg-black/80 px-4 py-1.5 rounded-full border border-white/20 whitespace-nowrap backdrop-blur-md">
-                  <span className="text-[10px] font-black uppercase text-white pointer-events-none">{p.customName || p.name}</span>
+                  <span className="text-[10px] font-black uppercase text-white">{p.customName || p.name}</span>
                 </div>
               </div>
             </div>
@@ -189,10 +189,10 @@ const MapView: React.FC<MapViewProps> = ({
               style={{ left: pos.x, top: pos.y, width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
               <div 
-                className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-transform ${isSelected ? 'scale-150 border-white ring-2 ring-white/50' : ''} ${s.isScrambled ? 'opacity-30 blur-sm' : ''}`} 
+                className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-transform pointer-events-none ${isSelected ? 'scale-150 border-white ring-2 ring-white/50' : ''} ${s.isScrambled ? 'opacity-30 blur-sm' : ''}`} 
                 style={{ borderColor: shipColor, color: shipColor }}
               >
-                <span className="text-[12px] -rotate-45 text-white pointer-events-none">{s.isScrambled ? '⚡' : s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
+                <span className="text-[12px] -rotate-45 text-white">{s.isScrambled ? '⚡' : s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
             </div>
           );
@@ -205,5 +205,8 @@ const MapView: React.FC<MapViewProps> = ({
       </div>
     </div>
   );
-};
+});
+
+MapView.displayName = 'MapView';
+
 export default MapView;

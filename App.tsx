@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { GameState, Owner, AiDifficulty, Planet, Ship, ShipType, PlanetSpecialization, CombatScrap } from './types';
 import { generateInitialState, PLAYER_COLORS, MAX_PLANET_POPULATION, SHIP_STATS, GRID_SIZE, getEmpireBonuses, MAX_FACTORIES, MAX_MINES, MAX_BATTERIES, PLANET_COUNT } from './gameLogic';
 import MapView from './components/MapView';
@@ -42,6 +42,9 @@ const App: React.FC = () => {
   const [combatEvents, setCombatEvents] = useState<CombatEvent[]>([]);
   const [onlineCommanders, setOnlineCommanders] = useState<number>(0);
 
+  // Use a ref for processing state to avoid useEffect cycles with Firebase listener
+  const processingRef = useRef(false);
+
   useEffect(() => {
     if (!db) return;
     const myPresenceId = `presence-${Math.random().toString(36).substr(2, 9)}`;
@@ -56,21 +59,21 @@ const App: React.FC = () => {
     
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
-      // If we get valid data, update. If null, only reset if we aren't mid-processing a new state.
       if (data && data.planets) {
         setGameState(data);
-      } else if (data === null && !isProcessing) {
+      } else if (data === null && !processingRef.current) {
         setGameState(null);
         setHasStarted(false);
       }
     });
 
     return () => { unsubPresence(); unsubState(); if (db) { off(playersRef); off(stateRef); } };
-  }, [isProcessing]);
+  }, []);
 
   const handleResetGame = useCallback(async () => {
     if (!db || !window.confirm("ARE YOU SURE? THIS WILL TERMINATE THE GALAXY FOR EVERYONE.")) return;
     setIsProcessing(true);
+    processingRef.current = true;
     try {
       await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), null);
       setGameState(null);
@@ -79,12 +82,15 @@ const App: React.FC = () => {
       console.error("Reset failed:", e);
     } finally {
       setIsProcessing(false);
+      processingRef.current = false;
     }
   }, []);
 
   const handleIssueOrder = useCallback((type: string, payload?: any) => {
     if (!playerRole || !gameState || !db) return;
-    const nextState = JSON.parse(JSON.stringify(gameState)) as GameState; // Deep clone for stability
+    
+    // Use shallow copies where possible for speed
+    const nextState = { ...gameState };
     
     if (type === 'SET_COURSE') { setIsSettingCourse(true); return; }
     if (type === 'SEND_EMOTE') {
@@ -106,10 +112,9 @@ const App: React.FC = () => {
       const techKey = payload.tech as keyof typeof DEFAULT_TECHS;
       const cost = (currentTechs[techKey] + 1) * 1000;
       if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-      nextState.playerCredits[playerRole] -= cost;
+      nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
       currentTechs[techKey] += 1;
-      if (!nextState.techs) nextState.techs = {};
-      nextState.techs[playerRole] = currentTechs;
+      nextState.techs = { ...(nextState.techs || {}), [playerRole]: currentTechs };
       set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
       return;
     }
@@ -123,11 +128,11 @@ const App: React.FC = () => {
       nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
     } else if (type === 'BUILD_MINE' && 'population' in selected) {
       if ((nextState.playerCredits[playerRole] || 0) < 500) return;
-      nextState.playerCredits[playerRole] -= 500;
+      nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 500 };
       nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
     } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
       if ((nextState.playerCredits[playerRole] || 0) < 800) return;
-      nextState.playerCredits[playerRole] -= 800;
+      nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 800 };
       nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
     } else if (type === 'BUILD_SHIP' && 'population' in selected) {
        const shipType = payload.type as ShipType;
@@ -135,7 +140,7 @@ const App: React.FC = () => {
        const bonuses = getEmpireBonuses(nextState.planets, playerRole);
        const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (selected.specialization === 'SHIPYARD' ? 0.25 : 0)));
        if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-       nextState.playerCredits[playerRole] -= cost;
+       nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
        const newShip: Ship = {
           id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
           name: `${nextState.playerNames[playerRole]} ${shipType}`,
@@ -158,7 +163,8 @@ const App: React.FC = () => {
   const humanPlayers = useMemo(() => {
     if (!gameState) return [];
     const humans: Owner[] = [];
-    for (let i = 1; i <= (gameState.playerCount || 0); i++) {
+    const count = gameState.playerCount || 0;
+    for (let i = 1; i <= count; i++) {
       const p = `P${i}` as Owner;
       if (!gameState.aiPlayers?.includes(p)) humans.push(p);
     }
@@ -174,6 +180,7 @@ const App: React.FC = () => {
   const executeTurn = useCallback(async () => {
     if (isProcessing || !allPlayersReady || !gameState || !db) return;
     setIsProcessing(true);
+    processingRef.current = true;
     
     try {
       const nextPlanets = (gameState.planets || []).map(p => ({...p}));
@@ -183,11 +190,11 @@ const App: React.FC = () => {
       const events: CombatEvent[] = [];
       const newScraps: CombatScrap[] = [];
 
-      const empireBonuses: Record<string, any> = {};
+      const empireBonusesMap: Record<string, any> = {};
       const owners = new Set<Owner>();
       nextPlanets.forEach(p => owners.add(p.owner));
       nextShips.forEach(s => owners.add(s.owner));
-      owners.forEach(o => { if (o !== 'NEUTRAL') empireBonuses[o] = getEmpireBonuses(nextPlanets, o); });
+      owners.forEach(o => { if (o !== 'NEUTRAL') empireBonusesMap[o] = getEmpireBonuses(nextPlanets, o); });
 
       if (gameState.aiPlayers) {
         gameState.aiPlayers.forEach(ai => {
@@ -248,7 +255,7 @@ const App: React.FC = () => {
               const enemies = shipsAtPlanet.filter(s => s.owner !== attacker.owner);
               if (enemies.length > 0) {
                 const target = enemies[0];
-                const dmg = attacker.attack + (empireBonuses[attacker.owner]?.firepowerBonus || 0);
+                const dmg = attacker.attack + (empireBonusesMap[attacker.owner]?.firepowerBonus || 0);
                 damageMap[target.id] = (damageMap[target.id] || 0) + dmg;
                 events.push({ id: `ev-${attacker.id}-${target.id}`, attackerPos: { x: attacker.x, y: attacker.y }, targetPos: { x: target.x, y: target.y }, color: PLAYER_COLORS[attacker.owner], owner: attacker.owner });
               }
@@ -282,7 +289,7 @@ const App: React.FC = () => {
       });
 
       const winners = Array.from(new Set(nextPlanets.filter(p => p.owner !== 'NEUTRAL').map(p => p.owner)));
-      const winner = winners.find(o => nextPlanets.filter(p => p.owner === o).length >= PLANET_COUNT * 0.6) || null;
+      const winner = (winners as Owner[]).find(o => nextPlanets.filter(p => p.owner === o).length >= PLANET_COUNT * 0.6) || null;
 
       const finalState: GameState = { 
         ...gameState, round: gameState.round + 1, planets: nextPlanets, ships: nextShips, 
@@ -293,7 +300,7 @@ const App: React.FC = () => {
       setCombatEvents(events);
       setTimeout(() => setCombatEvents([]), 3000);
       await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), finalState);
-    } catch (e) { console.error("Turn execution failed:", e); } finally { setIsProcessing(false); }
+    } catch (e) { console.error("Turn execution failed:", e); } finally { setIsProcessing(false); processingRef.current = false; }
   }, [gameState, allPlayersReady, isProcessing]);
 
   const currentSelection = useMemo(() => {
@@ -332,8 +339,9 @@ const App: React.FC = () => {
       <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={async (pc, ai, names, diff) => {
         if (!db) return;
         setIsProcessing(true);
+        processingRef.current = true;
         const state = generateInitialState(pc, ai, undefined, names, diff);
-        try { await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), state); setPlayerRole('P1'); setGameState(state); setHasStarted(true); setIsNewGameOpen(false); } catch (e) { console.error(e); } finally { setIsProcessing(false); }
+        try { await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), state); setPlayerRole('P1'); setGameState(state); setHasStarted(true); setIsNewGameOpen(false); } catch (e) { console.error(e); } finally { setIsProcessing(false); processingRef.current = false; }
       }} />
       <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
     </div>
@@ -362,8 +370,29 @@ const App: React.FC = () => {
         </div>
       </header>
       <main className="flex-1 relative overflow-hidden">
-        {gameState && <MapView planets={gameState.planets || []} ships={gameState.ships || []} selectedId={selectedId} onSelect={handleMapSelect} isSettingCourse={isSettingCourse} combatEvents={combatEvents} activeEvents={gameState.activeEvents} combatScraps={gameState.combatScraps} emotes={gameState.emotes} />}
-        <SelectionPanel selection={currentSelection} onClose={() => setSelectedId(null)} playerRole={playerRole} credits={gameState?.playerCredits[playerRole || 'P1'] || 0} onIssueOrder={handleIssueOrder} isSettingCourse={isSettingCourse} planets={gameState?.planets || []} techLevels={playerRole && gameState?.techs?.[playerRole] ? gameState.techs[playerRole] : DEFAULT_TECHS} />
+        {gameState && (
+          <MapView 
+            planets={gameState.planets || []} 
+            ships={gameState.ships || []} 
+            selectedId={selectedId} 
+            onSelect={handleMapSelect} 
+            isSettingCourse={isSettingCourse} 
+            combatEvents={combatEvents} 
+            activeEvents={gameState.activeEvents} 
+            combatScraps={gameState.combatScraps} 
+            emotes={gameState.emotes} 
+          />
+        )}
+        <SelectionPanel 
+          selection={currentSelection} 
+          onClose={() => setSelectedId(null)} 
+          playerRole={playerRole} 
+          credits={gameState?.playerCredits[playerRole || 'P1'] || 0} 
+          onIssueOrder={handleIssueOrder} 
+          isSettingCourse={isSettingCourse} 
+          planets={gameState?.planets || []} 
+          techLevels={playerRole && gameState?.techs?.[playerRole] ? gameState.techs[playerRole] : DEFAULT_TECHS} 
+        />
         {gameState && <AdvisorPanel isOpen={isAdvisorOpen} onClose={() => setIsAdvisorOpen(false)} gameState={gameState} />}
         {gameState && <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} gameState={gameState} playerRole={playerRole} />}
       </main>
