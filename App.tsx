@@ -42,8 +42,12 @@ const App: React.FC = () => {
   const [combatEvents, setCombatEvents] = useState<CombatEvent[]>([]);
   const [onlineCommanders, setOnlineCommanders] = useState<number>(0);
 
-  // Use a ref for processing state to avoid useEffect cycles with Firebase listener
   const processingRef = useRef(false);
+  const gameStateRef = useRef<GameState | null>(null);
+
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
 
   useEffect(() => {
     if (!db) return;
@@ -59,7 +63,7 @@ const App: React.FC = () => {
     
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
-      if (data && data.planets) {
+      if (data && data.planets && Array.isArray(data.planets)) {
         setGameState(data);
       } else if (data === null && !processingRef.current) {
         setGameState(null);
@@ -87,27 +91,23 @@ const App: React.FC = () => {
   }, []);
 
   const handleIssueOrder = useCallback((type: string, payload?: any) => {
-    if (!playerRole || !gameState || !db) return;
+    const currentG = gameStateRef.current;
+    if (!playerRole || !currentG || !db) return;
     
-    // Use shallow copies where possible for speed
-    const nextState = { ...gameState };
+    const nextState = { ...currentG };
+    let needsUpdate = true;
     
     if (type === 'SET_COURSE') { setIsSettingCourse(true); return; }
     if (type === 'SEND_EMOTE') {
       nextState.emotes = { ...(nextState.emotes || {}), [playerRole]: { text: payload.text, timestamp: Date.now() } };
-      set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
-      return;
-    }
-    if (type === 'COMMIT') {
+    } else if (type === 'COMMIT') {
       const currentReady = nextState.readyPlayers || [];
       if (!currentReady.includes(playerRole)) {
         nextState.readyPlayers = [...currentReady, playerRole];
-        set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
+      } else {
+        needsUpdate = false;
       }
-      return;
-    }
-    
-    if (type === 'RESEARCH_TECH') {
+    } else if (type === 'RESEARCH_TECH') {
       const currentTechs = { ...DEFAULT_TECHS, ...(nextState.techs?.[playerRole] || {}) };
       const techKey = payload.tech as keyof typeof DEFAULT_TECHS;
       const cost = (currentTechs[techKey] + 1) * 1000;
@@ -115,50 +115,50 @@ const App: React.FC = () => {
       nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
       currentTechs[techKey] += 1;
       nextState.techs = { ...(nextState.techs || {}), [playerRole]: currentTechs };
-      set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
-      return;
-    }
+    } else {
+      const selected = (currentG.planets || []).find(p => p.id === selectedId) || (currentG.ships || []).find(s => s.id === selectedId);
+      if (!selected) return;
 
-    const selected = (nextState.planets || []).find(p => p.id === selectedId) || (nextState.ships || []).find(s => s.id === selectedId);
-    if (!selected) return;
+      nextState.readyPlayers = (nextState.readyPlayers || []).filter(p => p !== playerRole);
 
-    nextState.readyPlayers = (nextState.readyPlayers || []).filter(p => p !== playerRole);
-
-    if (type === 'RENAME_PLANET' && 'population' in selected) {
-      nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
-    } else if (type === 'BUILD_MINE' && 'population' in selected) {
-      if ((nextState.playerCredits[playerRole] || 0) < 500) return;
-      nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 500 };
-      nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
-    } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
-      if ((nextState.playerCredits[playerRole] || 0) < 800) return;
-      nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 800 };
-      nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
-    } else if (type === 'BUILD_SHIP' && 'population' in selected) {
-       const shipType = payload.type as ShipType;
-       const baseStats = SHIP_STATS[shipType];
-       const bonuses = getEmpireBonuses(nextState.planets, playerRole);
-       const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (selected.specialization === 'SHIPYARD' ? 0.25 : 0)));
-       if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-       nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
-       const newShip: Ship = {
-          id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          name: `${nextState.playerNames[playerRole]} ${shipType}`,
-          type: shipType, owner: playerRole, x: selected.x, y: selected.y,
-          currentPlanetId: selected.id, targetPlanetId: null,
-          cargo: 0, maxCargo: baseStats.cargo, cargoPeople: 0,
-          maxPeopleCargo: shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people,
-          hp: Math.floor(baseStats.hp * bonuses.strength), maxHp: Math.floor(baseStats.hp * bonuses.strength),
-          attack: Math.floor(baseStats.attack * bonuses.strength), speed: baseStats.speed, status: 'ORBITING', isScrambled: false
-       };
-       nextState.ships = [...(nextState.ships || []), newShip];
-    } else if (type === 'SET_SHIP_TARGET' && 'attack' in selected) {
-      nextState.ships = nextState.ships.map(s => s.id === selected.id ? { ...s, targetPlanetId: payload.planetId, status: 'MOVING' } : s);
-      setIsSettingCourse(false);
+      if (type === 'RENAME_PLANET' && 'population' in selected) {
+        nextState.planets = (nextState.planets || []).map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
+      } else if (type === 'BUILD_MINE' && 'population' in selected) {
+        if ((nextState.playerCredits[playerRole] || 0) < 500) return;
+        nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 500 };
+        nextState.planets = (nextState.planets || []).map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
+      } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
+        if ((nextState.playerCredits[playerRole] || 0) < 800) return;
+        nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 800 };
+        nextState.planets = (nextState.planets || []).map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
+      } else if (type === 'BUILD_SHIP' && 'population' in selected) {
+         const shipType = payload.type as ShipType;
+         const baseStats = SHIP_STATS[shipType];
+         const bonuses = getEmpireBonuses(nextState.planets || [], playerRole);
+         const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (selected.specialization === 'SHIPYARD' ? 0.25 : 0)));
+         if ((nextState.playerCredits[playerRole] || 0) < cost) return;
+         nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
+         const newShip: Ship = {
+            id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+            name: `${nextState.playerNames[playerRole]} ${shipType}`,
+            type: shipType, owner: playerRole, x: selected.x, y: selected.y,
+            currentPlanetId: selected.id, targetPlanetId: null,
+            cargo: 0, maxCargo: baseStats.cargo, cargoPeople: 0,
+            maxPeopleCargo: shipType === 'WARSHIP' ? bonuses.warshipCapacity : baseStats.people,
+            hp: Math.floor(baseStats.hp * bonuses.strength), maxHp: Math.floor(baseStats.hp * bonuses.strength),
+            attack: Math.floor(baseStats.attack * bonuses.strength), speed: baseStats.speed, status: 'ORBITING', isScrambled: false
+         };
+         nextState.ships = [...(nextState.ships || []), newShip];
+      } else if (type === 'SET_SHIP_TARGET' && 'attack' in selected) {
+        nextState.ships = (nextState.ships || []).map(s => s.id === selected.id ? { ...s, targetPlanetId: payload.planetId, status: 'MOVING' } : s);
+        setIsSettingCourse(false);
+      }
     }
     
-    set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
-  }, [playerRole, gameState, selectedId]);
+    if (needsUpdate) {
+      set(ref(db!, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
+    }
+  }, [playerRole, selectedId]);
 
   const humanPlayers = useMemo(() => {
     if (!gameState) return [];
@@ -183,10 +183,11 @@ const App: React.FC = () => {
     processingRef.current = true;
     
     try {
-      const nextPlanets = (gameState.planets || []).map(p => ({...p}));
-      let nextShips: Ship[] = (gameState.ships || []).map(s => ({...s, isScrambled: false}));
-      const nextCredits = { ...gameState.playerCredits };
-      let nextEvents = (gameState.activeEvents || []).map(e => ({...e}));
+      const currentG = gameStateRef.current || gameState;
+      const nextPlanets = (currentG.planets || []).map(p => ({...p}));
+      let nextShips = (currentG.ships || []).map(s => ({...s, isScrambled: false}));
+      const nextCredits = { ...currentG.playerCredits };
+      let nextEvents = (currentG.activeEvents || []).map(e => ({...e}));
       const events: CombatEvent[] = [];
       const newScraps: CombatScrap[] = [];
 
@@ -196,8 +197,8 @@ const App: React.FC = () => {
       nextShips.forEach(s => owners.add(s.owner));
       owners.forEach(o => { if (o !== 'NEUTRAL') empireBonusesMap[o] = getEmpireBonuses(nextPlanets, o); });
 
-      if (gameState.aiPlayers) {
-        gameState.aiPlayers.forEach(ai => {
+      if (currentG.aiPlayers) {
+        currentG.aiPlayers.forEach(ai => {
           nextPlanets.filter(p => p.owner === ai).forEach(p => {
             if ((nextCredits[ai] || 0) > 2000) {
               if (p.mines < MAX_MINES) { p.mines++; nextCredits[ai] -= 500; }
@@ -212,7 +213,7 @@ const App: React.FC = () => {
       }
 
       if (Math.random() < 0.1 && nextEvents.length === 0) {
-        nextEvents.push({ type: 'COMET', x: 0, y: Math.random() * GRID_SIZE, targetX: GRID_SIZE, targetY: Math.random() * GRID_SIZE, roundStart: gameState.round });
+        nextEvents.push({ type: 'COMET', x: 0, y: Math.random() * GRID_SIZE, targetX: GRID_SIZE, targetY: Math.random() * GRID_SIZE, roundStart: currentG.round });
       }
       nextEvents = nextEvents.filter(e => {
         if (e.type === 'COMET') {
@@ -229,7 +230,7 @@ const App: React.FC = () => {
         if (ship.isScrambled || !ship.targetPlanetId) return ship;
         const target = nextPlanets.find(p => p.id === ship.targetPlanetId);
         if (!target) return ship;
-        const speedBonus = (gameState.techs?.[ship.owner]?.engine || 0) * 0.15;
+        const speedBonus = (currentG.techs?.[ship.owner]?.engine || 0) * 0.15;
         const currentSpeed = (ship.speed || 100) * (1 + speedBonus);
         const dx = target.x - ship.x, dy = target.y - ship.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
@@ -292,14 +293,14 @@ const App: React.FC = () => {
       const winner = (winners as Owner[]).find(o => nextPlanets.filter(p => p.owner === o).length >= PLANET_COUNT * 0.6) || null;
 
       const finalState: GameState = { 
-        ...gameState, round: gameState.round + 1, planets: nextPlanets, ships: nextShips, 
+        ...currentG, round: currentG.round + 1, planets: nextPlanets, ships: nextShips, 
         playerCredits: nextCredits, readyPlayers: [], winner, activeEvents: nextEvents, 
-        combatScraps: [...(gameState.combatScraps || []).filter(s => Date.now() - s.timestamp < 10000), ...newScraps]
+        combatScraps: [...(currentG.combatScraps || []).filter(s => Date.now() - s.timestamp < 10000), ...newScraps]
       };
       
       setCombatEvents(events);
       setTimeout(() => setCombatEvents([]), 3000);
-      await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), finalState);
+      await set(ref(db!, `lobbies/${FAMILY_GALAXY_ID}/state`), finalState);
     } catch (e) { console.error("Turn execution failed:", e); } finally { setIsProcessing(false); processingRef.current = false; }
   }, [gameState, allPlayersReady, isProcessing]);
 
