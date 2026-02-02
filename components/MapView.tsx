@@ -75,14 +75,13 @@ const MapView: React.FC<MapViewProps> = ({
     return posMap;
   }, [ships, planetMap]);
 
-  // Transform safety check
   const safeX = isNaN(offset.x) ? 0 : offset.x;
   const safeY = isNaN(offset.y) ? 0 : offset.y;
   const safeZoom = isNaN(zoom) || zoom <= 0 ? 0.4 : zoom;
 
   return (
     <div 
-      className={`w-full h-full relative bg-[#020617] cursor-grab active:cursor-grabbing touch-none ${isSettingCourse ? 'cursor-crosshair' : ''}`}
+      className={`w-full h-full relative bg-[#020617] cursor-grab active:cursor-grabbing touch-none overflow-hidden ${isSettingCourse ? 'cursor-crosshair' : ''}`}
       onPointerDown={(e) => { 
         isDragging.current = true; 
         moved.current = false; 
@@ -119,13 +118,13 @@ const MapView: React.FC<MapViewProps> = ({
             return (
               <g key={ev.id}>
                 <line 
-                  x1={ev.attackerPos.x || 0} y1={ev.attackerPos.y || 0} 
-                  x2={ev.targetPos.x || 0} y2={ev.targetPos.y || 0} 
+                  x1={ev.attackerPos.x} y1={ev.attackerPos.y} 
+                  x2={ev.targetPos.x} y2={ev.targetPos.y} 
                   stroke={ev.color || '#fff'} strokeWidth="4" strokeLinecap="round" 
-                  style={{ animation: 'laser-pulse 0.2s infinite ease-in-out', filter: 'drop-shadow(0 0 5px currentColor)' }} 
+                  style={{ animation: 'laser-pulse 0.2s infinite ease-in-out' }} 
                 />
-                <circle cx={ev.attackerPos.x || 0} cy={ev.attackerPos.y || 0} r="8" fill={ev.color || '#fff'} style={{ animation: 'spark 0.3s forwards' }} />
-                <g style={{ transform: `translate(${ev.targetPos.x || 0}px, ${ev.targetPos.y || 0}px)` }}>
+                <circle cx={ev.attackerPos.x} cy={ev.attackerPos.y} r="8" fill={ev.color || '#fff'} style={{ animation: 'spark 0.3s forwards' }} />
+                <g style={{ transform: `translate(${ev.targetPos.x}px, ${ev.targetPos.y}px)` }}>
                   <path d="M-5,-5 L5,5 M-5,5 L5,-5" stroke="white" strokeWidth="2" style={{ animation: 'spark 0.3s forwards ease-out' }} />
                 </g>
               </g>
@@ -142,21 +141,33 @@ const MapView: React.FC<MapViewProps> = ({
         ))}
 
         {planets.map(p => {
-          if (!p || typeof p.x !== 'number') return null;
+          if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return null;
           const isSelected = selectedId === p.id;
           const emote = emotes[p.owner];
-          const showEmote = emote && Date.now() - emote.timestamp < 5000;
+          const showEmote = emote && (Date.now() - emote.timestamp < 5000);
           return (
-            <div key={p.id} onPointerUp={(e) => { 
-              e.stopPropagation(); 
-              if (!moved.current) onSelect(p.id); 
-            }} className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center p-24 z-20 cursor-pointer" style={{ left: p.x, top: p.y }}>
-              {showEmote && <div className="absolute -top-12 bg-white text-black px-4 py-1 rounded-2xl font-black text-xl shadow-2xl animate-bounce">{emote.text}</div>}
-              <div className={`w-14 h-14 rounded-full border-2 transition-all flex items-center justify-center ${isSelected ? 'scale-110 border-white shadow-[0_0_20px_white]' : 'border-white/10'}`} style={{ backgroundColor: PLAYER_COLORS[p.owner] || '#444' }}>
-                <span className="text-sm font-black text-white">{p.customName?.[0] || p.name[0] || '?'}</span>
-              </div>
-              <div className="mt-8 bg-black/90 px-4 py-1.5 rounded-full border border-white/20 whitespace-nowrap">
-                <span className="text-[10px] font-black uppercase text-white">{p.customName || p.name}</span>
+            <div 
+              key={p.id} 
+              onPointerUp={(e) => { 
+                e.stopPropagation(); 
+                if (!moved.current) onSelect(p.id); 
+              }} 
+              className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20 cursor-pointer pointer-events-auto" 
+              style={{ left: p.x, top: p.y, width: 140, height: 140, padding: 20 }}
+            >
+              <div className="relative flex flex-col items-center w-full h-full justify-center">
+                {showEmote && <div className="absolute -top-16 bg-white text-black px-4 py-1 rounded-2xl font-black text-xl shadow-2xl animate-bounce whitespace-nowrap z-50">{emote.text}</div>}
+                
+                <div 
+                  className={`w-14 h-14 rounded-full border-2 transition-all flex items-center justify-center shrink-0 ${isSelected ? 'scale-110 border-white ring-4 ring-white/30 ring-offset-2 ring-offset-black' : 'border-white/10'}`} 
+                  style={{ backgroundColor: PLAYER_COLORS[p.owner] || '#444' }}
+                >
+                  <span className="text-sm font-black text-white pointer-events-none">{p.customName?.[0] || p.name[0] || '?'}</span>
+                </div>
+
+                <div className="mt-4 bg-black/80 px-4 py-1.5 rounded-full border border-white/20 whitespace-nowrap backdrop-blur-md">
+                  <span className="text-[10px] font-black uppercase text-white pointer-events-none">{p.customName || p.name}</span>
+                </div>
               </div>
             </div>
           );
@@ -166,13 +177,22 @@ const MapView: React.FC<MapViewProps> = ({
           if (!s) return null;
           const pos = shipDisplayPositions[s.id] || { x: s.x || 0, y: s.y || 0 };
           const shipColor = PLAYER_COLORS[s.owner] || '#666';
+          const isSelected = selectedId === s.id;
           return (
-            <div key={s.id} onPointerUp={(e) => { 
-              e.stopPropagation(); 
-              if (!moved.current) onSelect(s.id); 
-            }} className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer p-8 z-40" style={{ left: pos.x, top: pos.y }}>
-              <div className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-transform ${selectedId === s.id ? 'scale-150 border-white shadow-[0_0_15px_currentColor]' : ''} ${s.isScrambled ? 'opacity-30 blur-sm' : ''}`} style={{ borderColor: shipColor, color: shipColor }}>
-                <span className="text-[12px] -rotate-45 text-white">{s.isScrambled ? '⚡' : s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
+            <div 
+              key={s.id} 
+              onPointerUp={(e) => { 
+                e.stopPropagation(); 
+                if (!moved.current) onSelect(s.id); 
+              }} 
+              className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-40 pointer-events-auto" 
+              style={{ left: pos.x, top: pos.y, width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            >
+              <div 
+                className={`w-8 h-8 border-2 rotate-45 flex items-center justify-center bg-slate-900 transition-transform ${isSelected ? 'scale-150 border-white ring-2 ring-white/50' : ''} ${s.isScrambled ? 'opacity-30 blur-sm' : ''}`} 
+                style={{ borderColor: shipColor, color: shipColor }}
+              >
+                <span className="text-[12px] -rotate-45 text-white pointer-events-none">{s.isScrambled ? '⚡' : s.type === 'WARSHIP' ? '⚔️' : s.type === 'FREIGHTER' ? '📦' : '🚀'}</span>
               </div>
             </div>
           );
@@ -180,8 +200,8 @@ const MapView: React.FC<MapViewProps> = ({
       </div>
 
       <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-50">
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.15))} className="w-10 h-10 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-lg">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.15))} className="w-10 h-10 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-lg">-</button>
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.15))} className="w-12 h-12 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-xl active:bg-slate-800 transition-colors">+</button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.15))} className="w-12 h-12 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-xl active:bg-slate-800 transition-colors">-</button>
       </div>
     </div>
   );
