@@ -29,6 +29,16 @@ export interface CombatEvent {
 
 const DEFAULT_TECHS = { engine: 0, shields: 0, scanners: 0 };
 
+/** 
+ * Firebase can return arrays as objects with numeric keys.
+ * This helper ensures we always have a clean array.
+ */
+function ensureArray<T>(data: any): T[] {
+  if (!data) return [];
+  if (Array.isArray(data)) return data.filter(Boolean);
+  return Object.values(data) as T[];
+}
+
 const App: React.FC = () => {
   const [hasStarted, setHasStarted] = useState(false);
   const [playerRole, setPlayerRole] = useState<Owner | null>(null);
@@ -63,8 +73,18 @@ const App: React.FC = () => {
     
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
-      if (data && data.planets && Array.isArray(data.planets)) {
-        setGameState(data);
+      if (data) {
+        // Critical: Normalize arrays that Firebase might have converted to objects
+        data.planets = ensureArray<Planet>(data.planets);
+        data.ships = ensureArray<Ship>(data.ships);
+        data.readyPlayers = ensureArray<Owner>(data.readyPlayers);
+        data.aiPlayers = ensureArray<Owner>(data.aiPlayers);
+        data.combatScraps = ensureArray<CombatScrap>(data.combatScraps);
+        data.activeEvents = ensureArray<any>(data.activeEvents);
+        
+        if (data.planets.length > 0) {
+          setGameState(data);
+        }
       } else if (data === null && !processingRef.current) {
         setGameState(null);
         setHasStarted(false);
@@ -94,10 +114,12 @@ const App: React.FC = () => {
     const currentG = gameStateRef.current;
     if (!playerRole || !currentG || !db) return;
     
-    const nextState = { ...currentG };
+    // Deep clone to prevent accidental mutations of ref
+    const nextState = JSON.parse(JSON.stringify(currentG)) as GameState;
     let needsUpdate = true;
     
     if (type === 'SET_COURSE') { setIsSettingCourse(true); return; }
+    
     if (type === 'SEND_EMOTE') {
       nextState.emotes = { ...(nextState.emotes || {}), [playerRole]: { text: payload.text, timestamp: Date.now() } };
     } else if (type === 'COMMIT') {
@@ -112,32 +134,32 @@ const App: React.FC = () => {
       const techKey = payload.tech as keyof typeof DEFAULT_TECHS;
       const cost = (currentTechs[techKey] + 1) * 1000;
       if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-      nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
+      nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - cost;
       currentTechs[techKey] += 1;
       nextState.techs = { ...(nextState.techs || {}), [playerRole]: currentTechs };
     } else {
-      const selected = (currentG.planets || []).find(p => p.id === selectedId) || (currentG.ships || []).find(s => s.id === selectedId);
+      const selected = nextState.planets.find(p => p.id === selectedId) || nextState.ships.find(s => s.id === selectedId);
       if (!selected) return;
 
       nextState.readyPlayers = (nextState.readyPlayers || []).filter(p => p !== playerRole);
 
       if (type === 'RENAME_PLANET' && 'population' in selected) {
-        nextState.planets = (nextState.planets || []).map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
+        nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
       } else if (type === 'BUILD_MINE' && 'population' in selected) {
         if ((nextState.playerCredits[playerRole] || 0) < 500) return;
-        nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 500 };
-        nextState.planets = (nextState.planets || []).map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
+        nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - 500;
+        nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
       } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
         if ((nextState.playerCredits[playerRole] || 0) < 800) return;
-        nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - 800 };
-        nextState.planets = (nextState.planets || []).map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
+        nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - 800;
+        nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
       } else if (type === 'BUILD_SHIP' && 'population' in selected) {
          const shipType = payload.type as ShipType;
          const baseStats = SHIP_STATS[shipType];
-         const bonuses = getEmpireBonuses(nextState.planets || [], playerRole);
+         const bonuses = getEmpireBonuses(nextState.planets, playerRole);
          const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (selected.specialization === 'SHIPYARD' ? 0.25 : 0)));
          if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-         nextState.playerCredits = { ...nextState.playerCredits, [playerRole]: nextState.playerCredits[playerRole] - cost };
+         nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - cost;
          const newShip: Ship = {
             id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             name: `${nextState.playerNames[playerRole]} ${shipType}`,
@@ -150,7 +172,7 @@ const App: React.FC = () => {
          };
          nextState.ships = [...(nextState.ships || []), newShip];
       } else if (type === 'SET_SHIP_TARGET' && 'attack' in selected) {
-        nextState.ships = (nextState.ships || []).map(s => s.id === selected.id ? { ...s, targetPlanetId: payload.planetId, status: 'MOVING' } : s);
+        nextState.ships = nextState.ships.map(s => s.id === selected.id ? { ...s, targetPlanetId: payload.planetId, status: 'MOVING' } : s);
         setIsSettingCourse(false);
       }
     }
@@ -183,9 +205,9 @@ const App: React.FC = () => {
     processingRef.current = true;
     
     try {
-      const currentG = gameStateRef.current || gameState;
-      const nextPlanets = (currentG.planets || []).map(p => ({...p}));
-      let nextShips = (currentG.ships || []).map(s => ({...s, isScrambled: false}));
+      const currentG = JSON.parse(JSON.stringify(gameStateRef.current || gameState)) as GameState;
+      const nextPlanets = currentG.planets.map(p => ({...p}));
+      let nextShips = currentG.ships.map(s => ({...s, isScrambled: false}));
       const nextCredits = { ...currentG.playerCredits };
       let nextEvents = (currentG.activeEvents || []).map(e => ({...e}));
       const events: CombatEvent[] = [];
@@ -373,8 +395,8 @@ const App: React.FC = () => {
       <main className="flex-1 relative overflow-hidden">
         {gameState && (
           <MapView 
-            planets={gameState.planets || []} 
-            ships={gameState.ships || []} 
+            planets={gameState.planets} 
+            ships={gameState.ships} 
             selectedId={selectedId} 
             onSelect={handleMapSelect} 
             isSettingCourse={isSettingCourse} 
