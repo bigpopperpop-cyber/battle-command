@@ -32,8 +32,8 @@ const MapView: React.FC<MapViewProps> = memo(({
       const isMobile = window.innerWidth < 768;
       const initialZoom = isMobile ? 0.35 : 0.45;
       setZoom(initialZoom);
-      const centerX = window.innerWidth / 2 - (GRID_SIZE / 2) * initialZoom;
-      const centerY = (window.innerHeight / 2 - (GRID_SIZE / 2) * initialZoom) - (isMobile ? 50 : 0);
+      const centerX = (window.innerWidth / 2) - ((GRID_SIZE / 2) * initialZoom);
+      const centerY = (window.innerHeight / 2) - ((GRID_SIZE / 2) * initialZoom) - (isMobile ? 50 : 0);
       setOffset({ 
         x: isNaN(centerX) ? 0 : centerX, 
         y: isNaN(centerY) ? 0 : centerY
@@ -77,7 +77,7 @@ const MapView: React.FC<MapViewProps> = memo(({
 
   const safeX = isNaN(offset.x) ? 0 : offset.x;
   const safeY = isNaN(offset.y) ? 0 : offset.y;
-  const safeZoom = isNaN(zoom) || zoom <= 0 ? 0.4 : zoom;
+  const safeZoom = Math.max(0.05, isNaN(zoom) ? 0.4 : zoom);
 
   return (
     <div 
@@ -101,17 +101,10 @@ const MapView: React.FC<MapViewProps> = memo(({
         (e.target as HTMLElement).releasePointerCapture(e.pointerId); 
       }}
     >
-      <style>{`
-        @keyframes laser-pulse { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
-        @keyframes spark { 0% { transform: scale(0); opacity: 1; } 100% { transform: scale(1.5); opacity: 0; } }
-        @keyframes shockwave { 0% { transform: scale(0.5); opacity: 1; border-width: 8px; } 100% { transform: scale(3); opacity: 0; border-width: 1px; } }
-      `}</style>
       <div className="absolute transition-transform duration-75" style={{ transform: `translate3d(${safeX}px, ${safeY}px, 0) scale(${safeZoom})`, width: GRID_SIZE, height: GRID_SIZE, transformOrigin: '0 0' }}>
         
-        {/* BG Grid */}
         <div className="absolute inset-0 pointer-events-none opacity-5 bg-[radial-gradient(circle,white_1px,transparent_1px)] bg-[length:100px_100px]" />
 
-        {/* Combat FX Layer */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
           {combatEvents.map(ev => {
             if (!ev.attackerPos || !ev.targetPos) return null;
@@ -121,30 +114,19 @@ const MapView: React.FC<MapViewProps> = memo(({
                   x1={ev.attackerPos.x} y1={ev.attackerPos.y} 
                   x2={ev.targetPos.x} y2={ev.targetPos.y} 
                   stroke={ev.color || '#fff'} strokeWidth="4" strokeLinecap="round" 
-                  style={{ animation: 'laser-pulse 0.2s infinite ease-in-out' }} 
+                  className="animate-pulse"
                 />
-                <circle cx={ev.attackerPos.x} cy={ev.attackerPos.y} r="8" fill={ev.color || '#fff'} style={{ animation: 'spark 0.3s forwards' }} />
-                <g style={{ transform: `translate(${ev.targetPos.x}px, ${ev.targetPos.y}px)` }}>
-                  <path d="M-5,-5 L5,5 M-5,5 L5,-5" stroke="white" strokeWidth="2" style={{ animation: 'spark 0.3s forwards ease-out' }} />
-                </g>
               </g>
             );
           })}
         </svg>
 
-        {activeEvents.map((e, idx) => e.type === 'COMET' && (
-          <div key={`comet-${idx}`} className="absolute -translate-x-1/2 -translate-y-1/2 w-12 h-12 bg-white rounded-full blur-xl animate-pulse" style={{ left: e.x || 0, top: e.y || 0 }} />
-        ))}
-
-        {combatScraps.filter(s => Date.now() - s.timestamp < 3000).map(s => (
-          <div key={s.id} className="absolute -translate-x-1/2 -translate-y-1/2 w-32 h-32 border-2 border-orange-500 rounded-full" style={{ left: s.x || 0, top: s.y || 0, animation: 'shockwave 1s forwards' }} />
-        ))}
-
         {planets.map(p => {
           if (!p || typeof p.x !== 'number' || typeof p.y !== 'number') return null;
           const isSelected = selectedId === p.id;
-          const emote = emotes[p.owner];
+          const emote = emotes?.[p.owner];
           const showEmote = emote && (Date.now() - emote.timestamp < 5000);
+          
           return (
             <div 
               key={p.id} 
@@ -157,14 +139,12 @@ const MapView: React.FC<MapViewProps> = memo(({
             >
               <div className="relative flex flex-col items-center w-full h-full justify-center pointer-events-none">
                 {showEmote && <div className="absolute -top-16 bg-white text-black px-4 py-1 rounded-2xl font-black text-xl shadow-2xl animate-bounce whitespace-nowrap z-50">{emote.text}</div>}
-                
                 <div 
                   className={`w-14 h-14 rounded-full border-2 transition-all flex items-center justify-center shrink-0 ${isSelected ? 'scale-110 border-white ring-4 ring-white/30 ring-offset-2 ring-offset-black' : 'border-white/10'}`} 
                   style={{ backgroundColor: PLAYER_COLORS[p.owner] || '#444' }}
                 >
                   <span className="text-sm font-black text-white">{p.customName?.[0] || p.name[0] || '?'}</span>
                 </div>
-
                 <div className="mt-4 bg-black/80 px-4 py-1.5 rounded-full border border-white/20 whitespace-nowrap backdrop-blur-md">
                   <span className="text-[10px] font-black uppercase text-white">{p.customName || p.name}</span>
                 </div>
@@ -208,5 +188,4 @@ const MapView: React.FC<MapViewProps> = memo(({
 });
 
 MapView.displayName = 'MapView';
-
 export default MapView;

@@ -31,20 +31,19 @@ export interface CombatEvent {
 const DEFAULT_TECHS = { engine: 0, shields: 0, scanners: 0 };
 
 /** 
- * Hardened array normalization for Firebase's sparse array behavior.
+ * Strict normalization for Firebase's sparse array data.
  */
 function ensureArray<T>(data: any): T[] {
   if (!data) return [];
-  if (Array.isArray(data)) return data.filter((item): item is T => !!item);
+  if (Array.isArray(data)) return data.filter((item): item is T => item !== null && item !== undefined);
   if (typeof data === 'object') {
-    return Object.values(data).filter((item): item is T => !!item);
+    return Object.values(data).filter((item): item is T => item !== null && item !== undefined);
   }
   return [];
 }
 
 const App: React.FC = () => {
-  const [isHydrated, setIsHydrated] = useState(false);
-  const [hasStarted, setHasStarted] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'CONNECTING' | 'LOBBY' | 'BRIDGE'>('CONNECTING');
   const [playerRole, setPlayerRole] = useState<Owner | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -60,22 +59,11 @@ const App: React.FC = () => {
   const processingRef = useRef(false);
   const gameStateRef = useRef<GameState | null>(null);
 
-  // Sync ref to latest state for callbacks
   useEffect(() => {
     gameStateRef.current = gameState;
   }, [gameState]);
 
-  // Load role from URL on mount
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const role = params.get('role') as Owner;
-    if (role) {
-      setPlayerRole(role);
-      setHasStarted(true);
-    }
-  }, []);
-
-  // MASTER SYNC ENGINE: Runs once on mount
+  // Unified Firebase Listener
   useEffect(() => {
     if (!db) return;
     
@@ -92,7 +80,6 @@ const App: React.FC = () => {
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Deeply normalize incoming data to ensure React-safe arrays
         const normalized: GameState = {
           ...data,
           planets: ensureArray<Planet>(data.planets),
@@ -101,29 +88,36 @@ const App: React.FC = () => {
           aiPlayers: ensureArray<Owner>(data.aiPlayers),
           combatScraps: ensureArray<CombatScrap>(data.combatScraps),
           activeEvents: ensureArray<any>(data.activeEvents),
-          logs: ensureArray<string>(data.logs),
+          logs: ensureArray<string>(data.logs).slice(-50), // Cap logs to prevent bloat
           playerCredits: data.playerCredits || {},
           playerNames: data.playerNames || {},
           techs: data.techs || {}
         };
         
         setGameState(normalized);
-        setIsHydrated(true);
+
+        // Auto-join if URL param matches
+        const params = new URLSearchParams(window.location.search);
+        const roleFromUrl = params.get('role') as Owner;
+        
+        if (roleFromUrl && !playerRole) {
+          setPlayerRole(roleFromUrl);
+          setSyncStatus('BRIDGE');
+        } else if (!playerRole) {
+          setSyncStatus('LOBBY');
+        } else {
+          setSyncStatus('BRIDGE');
+        }
       } else {
         if (!processingRef.current) {
           setGameState(null);
-          setHasStarted(false);
-          setIsHydrated(true);
+          setSyncStatus('LOBBY');
         }
       }
     });
 
-    return () => { 
-      unsubPresence(); 
-      unsubState(); 
-      if (db) { off(playersRef); off(stateRef); } 
-    };
-  }, []);
+    return () => { unsubPresence(); unsubState(); };
+  }, [playerRole]);
 
   const handleIssueOrder = useCallback((type: string, payload?: any) => {
     const currentG = gameStateRef.current;
@@ -132,7 +126,6 @@ const App: React.FC = () => {
     if (type === 'SET_COURSE') { setIsSettingCourse(true); return; }
 
     const nextState = JSON.parse(JSON.stringify(currentG)) as GameState;
-    // Post-clone normalization
     nextState.planets = ensureArray<Planet>(nextState.planets);
     nextState.ships = ensureArray<Ship>(nextState.ships);
     nextState.readyPlayers = ensureArray<Owner>(nextState.readyPlayers);
@@ -222,7 +215,7 @@ const App: React.FC = () => {
   }, [isSettingCourse, selectedId, playerRole]);
 
   const handleExecuteTurn = useCallback(async () => {
-    if (!gameState || !db || playerRole !== 'P1') return;
+    if (!gameState || !db || playerRole !== 'P1' || isProcessing) return;
     setIsProcessing(true);
     processingRef.current = true;
     
@@ -262,17 +255,17 @@ const App: React.FC = () => {
       setIsProcessing(false);
       processingRef.current = false;
     }
-  }, [gameState, playerRole]);
+  }, [gameState, playerRole, isProcessing]);
 
   const handleNewGame = useCallback(async (pc: number, ai: number, ns: Record<string, string>, diff: AiDifficulty) => {
-    if (!db) return;
+    if (!db || isProcessing) return;
     setIsProcessing(true);
     processingRef.current = true;
     const initialState = generateInitialState(pc, ai, undefined, ns, diff);
     try {
       await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), initialState);
       setPlayerRole('P1');
-      setHasStarted(true);
+      setSyncStatus('BRIDGE');
       setIsNewGameOpen(false);
     } catch (e) {
       console.error("Creation failed:", e);
@@ -280,25 +273,28 @@ const App: React.FC = () => {
       setIsProcessing(false);
       processingRef.current = false;
     }
-  }, []);
+  }, [isProcessing]);
 
   const selection = useMemo(() => {
     if (!gameState || !selectedId) return null;
     return gameState.planets.find(p => p.id === selectedId) || gameState.ships.find(s => s.id === selectedId) || null;
   }, [gameState, selectedId]);
 
-  if (!isHydrated) {
+  if (syncStatus === 'CONNECTING') {
     return (
-      <div className="fixed inset-0 flex items-center justify-center bg-[#020617] text-cyan-500 font-black uppercase tracking-[0.5em] animate-pulse">
-        Initializing Sector...
+      <div className="fixed inset-0 flex flex-col items-center justify-center bg-[#020617] space-y-4">
+        <div className="text-cyan-500 font-black uppercase tracking-[0.5em] animate-pulse">Establishing Subspace Link...</div>
+        <div className="w-48 h-1 bg-slate-900 rounded-full overflow-hidden">
+          <div className="h-full bg-cyan-600 animate-[scan_2s_linear_infinite]" style={{ width: '40%' }} />
+        </div>
       </div>
     );
   }
 
-  if (!hasStarted) {
+  if (syncStatus === 'LOBBY' || !playerRole) {
     return (
       <div className="min-h-screen bg-[#020617] flex flex-col items-center justify-center p-6 text-center">
-        <div className="max-w-md w-full glass-card rounded-[3rem] p-10 border-cyan-500/20 shadow-2xl space-y-8 animate-in fade-in duration-500">
+        <div className="max-w-md w-full glass-card rounded-[3rem] p-10 border-cyan-500/20 shadow-2xl space-y-8 animate-in fade-in zoom-in duration-500">
           <h1 className="text-5xl font-black text-white italic tracking-tighter">STELLAR<br/>COMMANDER</h1>
           <p className="text-xs text-cyan-400 font-black uppercase tracking-[0.4em]">Sector Command Interface</p>
           <div className="space-y-3">
@@ -310,10 +306,10 @@ const App: React.FC = () => {
                    return (
                      <button 
                        key={pId} 
-                       onClick={() => { setPlayerRole(pId); setHasStarted(true); }} 
-                       className="py-4 bg-slate-900 border border-white/10 hover:border-cyan-500/50 rounded-2xl font-black text-[10px] uppercase transition-all"
+                       onClick={() => { setPlayerRole(pId); setSyncStatus('BRIDGE'); }} 
+                       className="py-4 bg-slate-900 border border-white/10 hover:border-cyan-500/50 rounded-2xl font-black text-[10px] uppercase transition-all active:scale-95"
                      >
-                       Join {pId}
+                       Join as {pId}
                      </button>
                    );
                  })}
@@ -323,7 +319,7 @@ const App: React.FC = () => {
              )}
              <button onClick={() => setIsHelpOpen(true)} className="w-full py-4 bg-slate-900 text-slate-400 rounded-2xl font-bold text-sm">OPERATIONS MANUAL</button>
           </div>
-          <p className="text-[10px] text-slate-600 uppercase font-black">Online Commanders: {onlineCommanders}</p>
+          <p className="text-[10px] text-slate-600 uppercase font-black">Active Signals: {onlineCommanders}</p>
         </div>
         <NewGameModal isOpen={isNewGameOpen} onClose={() => setIsNewGameOpen(false)} onConfirm={handleNewGame} />
         <HelpModal isOpen={isHelpOpen} onClose={() => setIsHelpOpen(false)} />
@@ -331,10 +327,9 @@ const App: React.FC = () => {
     );
   }
 
-  // Crash-proof property access
-  const activeCredits = gameState?.playerCredits?.[playerRole || 'P1'] ?? 0;
-  const activeName = gameState?.playerNames?.[playerRole || 'P1'] ?? (playerRole || 'COMMANDER');
-  const isReady = gameState?.readyPlayers?.includes(playerRole || 'NEUTRAL') ?? false;
+  const activeCredits = gameState?.playerCredits?.[playerRole] ?? 0;
+  const activeName = gameState?.playerNames?.[playerRole] ?? (playerRole || 'COMMANDER');
+  const isReady = gameState?.readyPlayers?.includes(playerRole) ?? false;
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#020617] text-slate-200">
@@ -348,7 +343,7 @@ const App: React.FC = () => {
               <span className="text-[7px] font-black text-slate-500 uppercase">Credits</span>
               <span className="text-sm font-bold text-amber-400">{activeCredits.toLocaleString()}</span>
            </div>
-           <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center text-xl">🤖</button>
+           <button onClick={() => setIsAdvisorOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center text-xl hover:bg-slate-800 transition-colors">🤖</button>
         </div>
       </div>
 
@@ -372,12 +367,12 @@ const App: React.FC = () => {
         onIssueOrder={handleIssueOrder}
         isSettingCourse={isSettingCourse}
         planets={gameState?.planets || []}
-        techLevels={gameState?.techs?.[playerRole || 'P1'] || DEFAULT_TECHS}
+        techLevels={gameState?.techs?.[playerRole] || DEFAULT_TECHS}
       />
 
       <div className="absolute bottom-6 inset-x-6 flex items-center gap-4 z-[60]">
-        <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center">❓</button>
-        <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center">👥</button>
+        <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center hover:bg-slate-800 transition-colors">❓</button>
+        <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center hover:bg-slate-800 transition-colors">👥</button>
         <div className="flex-1" />
         {playerRole === 'P1' ? (
           <button 
@@ -403,8 +398,9 @@ const App: React.FC = () => {
       <InviteModal isOpen={isInviteOpen} onClose={() => setIsInviteOpen(false)} frequency={FAMILY_GALAXY_ID} gameState={gameState!} />
       
       {isProcessing && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex items-center justify-center">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[1000] flex flex-col items-center justify-center space-y-4">
           <div className="text-cyan-500 font-black animate-pulse uppercase tracking-[0.5em]">Synchronizing Galaxy...</div>
+          <div className="text-[10px] text-slate-500 font-black uppercase">Please wait for turn resolution</div>
         </div>
       )}
     </div>

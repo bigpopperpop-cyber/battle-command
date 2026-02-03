@@ -21,7 +21,6 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
   const [tab, setTab] = useState<'INFO' | 'TECH'>('INFO');
   const [newName, setNewName] = useState('');
 
-  // Reset local state when selection changes to avoid "stale" input text
   useEffect(() => {
     setNewName('');
     setTab('INFO');
@@ -32,11 +31,6 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
   const isPlanet = 'population' in selection;
   const isMine = playerRole && selection.owner === playerRole;
   const pColor = PLAYER_COLORS[selection.owner] || '#94a3b8';
-
-  const bonuses = useMemo(() => {
-    if (!playerRole || !planets.length) return { discount: 0, strength: 1, factoryCount: 0 };
-    return getEmpireBonuses(planets, playerRole);
-  }, [planets, playerRole]);
 
   return (
     <div className="fixed inset-x-2 bottom-2 md:bottom-4 md:inset-x-auto md:right-4 md:top-28 md:w-80 glass-card rounded-[2rem] border-white/10 shadow-2xl z-[80] flex flex-col overflow-hidden animate-in slide-in-from-bottom max-h-[50vh] md:max-h-none">
@@ -62,12 +56,18 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
             )}
             {isPlanet ? (
               <div className="grid grid-cols-3 gap-2">
-                {['Pop', 'Mines', 'Fact'].map((label, i) => (
-                  <div key={label} className="bg-slate-950/60 p-2 rounded-xl border border-white/5 text-center">
-                    <span className="block text-[7px] font-black text-slate-600 uppercase mb-0.5">{label}</span>
-                    <span className="text-xs font-bold text-white">{(i === 0 ? (selection.population || 0).toFixed(1) : i === 1 ? selection.mines : selection.factories)}</span>
-                  </div>
-                ))}
+                <div className="bg-slate-950/60 p-2 rounded-xl border border-white/5 text-center">
+                  <span className="block text-[7px] font-black text-slate-600 uppercase mb-0.5">Pop</span>
+                  <span className="text-xs font-bold text-white">{(selection.population || 0).toFixed(1)}</span>
+                </div>
+                <div className="bg-slate-950/60 p-2 rounded-xl border border-white/5 text-center">
+                  <span className="block text-[7px] font-black text-slate-600 uppercase mb-0.5">Mines</span>
+                  <span className="text-xs font-bold text-white">{selection.mines || 0}</span>
+                </div>
+                <div className="bg-slate-950/60 p-2 rounded-xl border border-white/5 text-center">
+                  <span className="block text-[7px] font-black text-slate-600 uppercase mb-0.5">Fact</span>
+                  <span className="text-xs font-bold text-white">{selection.factories || 0}</span>
+                </div>
               </div>
             ) : (
               <div className="bg-slate-950/60 p-3 rounded-xl border border-white/5">
@@ -93,7 +93,7 @@ const SelectionPanel: React.FC<SelectionPanelProps> = ({
           </>
         ) : (
           <div className="space-y-3">
-            {Object.entries(techLevels).map(([t, level]) => {
+            {Object.entries(techLevels || {}).map(([t, level]) => {
               const safeLevel = typeof level === 'number' ? level : 0;
               const cost = (safeLevel + 1) * 1000;
               return (
