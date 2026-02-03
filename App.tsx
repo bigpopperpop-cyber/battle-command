@@ -30,13 +30,16 @@ export interface CombatEvent {
 const DEFAULT_TECHS = { engine: 0, shields: 0, scanners: 0 };
 
 /** 
- * Firebase can return arrays as objects with numeric keys.
- * This helper ensures we always have a clean array.
+ * Firebase can return arrays as objects with numeric keys if they are sparse.
+ * This helper ensures we always have a clean, dense array for React rendering.
  */
 function ensureArray<T>(data: any): T[] {
   if (!data) return [];
   if (Array.isArray(data)) return data.filter(Boolean);
-  return Object.values(data) as T[];
+  if (typeof data === 'object') {
+    return Object.values(data).filter(Boolean) as T[];
+  }
+  return [];
 }
 
 const App: React.FC = () => {
@@ -74,16 +77,21 @@ const App: React.FC = () => {
     const unsubState = onValue(stateRef, (snapshot) => {
       const data = snapshot.val();
       if (data) {
-        // Critical: Normalize arrays that Firebase might have converted to objects
-        data.planets = ensureArray<Planet>(data.planets);
-        data.ships = ensureArray<Ship>(data.ships);
-        data.readyPlayers = ensureArray<Owner>(data.readyPlayers);
-        data.aiPlayers = ensureArray<Owner>(data.aiPlayers);
-        data.combatScraps = ensureArray<CombatScrap>(data.combatScraps);
-        data.activeEvents = ensureArray<any>(data.activeEvents);
+        // Normalize Firebase data structures back into valid React state
+        const normalized: GameState = {
+          ...data,
+          planets: ensureArray<Planet>(data.planets),
+          ships: ensureArray<Ship>(data.ships),
+          readyPlayers: ensureArray<Owner>(data.readyPlayers),
+          aiPlayers: ensureArray<Owner>(data.aiPlayers),
+          combatScraps: ensureArray<CombatScrap>(data.combatScraps),
+          activeEvents: ensureArray<any>(data.activeEvents),
+          logs: ensureArray<string>(data.logs)
+        };
         
-        if (data.planets.length > 0) {
-          setGameState(data);
+        // Prevent setting state if planets are completely missing (corrupt data check)
+        if (normalized.planets.length > 0) {
+          setGameState(normalized);
         }
       } else if (data === null && !processingRef.current) {
         setGameState(null);
@@ -114,7 +122,7 @@ const App: React.FC = () => {
     const currentG = gameStateRef.current;
     if (!playerRole || !currentG || !db) return;
     
-    // Deep clone to prevent accidental mutations of ref
+    // Work with a deep copy to ensure we don't mutate local state accidentally
     const nextState = JSON.parse(JSON.stringify(currentG)) as GameState;
     let needsUpdate = true;
     
@@ -134,24 +142,25 @@ const App: React.FC = () => {
       const techKey = payload.tech as keyof typeof DEFAULT_TECHS;
       const cost = (currentTechs[techKey] + 1) * 1000;
       if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-      nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - cost;
+      nextState.playerCredits[playerRole] -= cost;
       currentTechs[techKey] += 1;
       nextState.techs = { ...(nextState.techs || {}), [playerRole]: currentTechs };
     } else {
       const selected = nextState.planets.find(p => p.id === selectedId) || nextState.ships.find(s => s.id === selectedId);
       if (!selected) return;
 
+      // When an order is issued, the player is no longer "ready"
       nextState.readyPlayers = (nextState.readyPlayers || []).filter(p => p !== playerRole);
 
       if (type === 'RENAME_PLANET' && 'population' in selected) {
         nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, customName: payload.name } : p);
       } else if (type === 'BUILD_MINE' && 'population' in selected) {
         if ((nextState.playerCredits[playerRole] || 0) < 500) return;
-        nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - 500;
+        nextState.playerCredits[playerRole] -= 500;
         nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, mines: (p.mines || 0) + 1 } : p);
       } else if (type === 'BUILD_FACTORY' && 'population' in selected) {
         if ((nextState.playerCredits[playerRole] || 0) < 800) return;
-        nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - 800;
+        nextState.playerCredits[playerRole] -= 800;
         nextState.planets = nextState.planets.map(p => p.id === selectedId ? { ...p, factories: (p.factories || 0) + 1 } : p);
       } else if (type === 'BUILD_SHIP' && 'population' in selected) {
          const shipType = payload.type as ShipType;
@@ -159,7 +168,7 @@ const App: React.FC = () => {
          const bonuses = getEmpireBonuses(nextState.planets, playerRole);
          const cost = Math.floor(baseStats.cost * (1 - bonuses.discount - (selected.specialization === 'SHIPYARD' ? 0.25 : 0)));
          if ((nextState.playerCredits[playerRole] || 0) < cost) return;
-         nextState.playerCredits[playerRole] = nextState.playerCredits[playerRole] - cost;
+         nextState.playerCredits[playerRole] -= cost;
          const newShip: Ship = {
             id: `s-${playerRole}-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
             name: `${nextState.playerNames[playerRole]} ${shipType}`,
