@@ -257,6 +257,24 @@ const App: React.FC = () => {
     }
   }, [gameState, playerRole, isProcessing]);
 
+  const handleResetGame = useCallback(async () => {
+    if (!db || playerRole !== 'P1') return;
+    if (window.confirm("TERMINATE MISSION? This will collapse the current galaxy and reset all empire progress for all commanders.")) {
+      setIsProcessing(true);
+      processingRef.current = true;
+      try {
+        await set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), null);
+        setSyncStatus('LOBBY');
+        setPlayerRole(null);
+      } catch (e) {
+        console.error("Reset failed:", e);
+      } finally {
+        setIsProcessing(false);
+        processingRef.current = false;
+      }
+    }
+  }, [playerRole]);
+
   const handleNewGame = useCallback(async (pc: number, ai: number, ns: Record<string, string>, diff: AiDifficulty) => {
     if (!db || isProcessing) return;
     setIsProcessing(true);
@@ -373,7 +391,19 @@ const App: React.FC = () => {
       <div className="absolute bottom-6 inset-x-6 flex items-center gap-4 z-[60]">
         <button onClick={() => setIsHelpOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center hover:bg-slate-800 transition-colors">❓</button>
         <button onClick={() => setIsInviteOpen(true)} className="w-12 h-12 bg-slate-900/80 backdrop-blur-md rounded-xl border border-white/5 flex items-center justify-center hover:bg-slate-800 transition-colors">👥</button>
+        
+        {playerRole === 'P1' && (
+          <button 
+            onClick={handleResetGame} 
+            className="w-12 h-12 bg-rose-600 hover:bg-rose-500 text-white rounded-xl border border-white/5 flex items-center justify-center shadow-xl shadow-rose-900/20 transition-all active:scale-95"
+            title="Terminate Mission"
+          >
+            ☢️
+          </button>
+        )}
+
         <div className="flex-1" />
+        
         {playerRole === 'P1' ? (
           <button 
             disabled={isProcessing || (gameState?.readyPlayers?.length || 0) < (gameState?.playerCount || 1)}

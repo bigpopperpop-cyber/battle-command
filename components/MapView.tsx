@@ -87,18 +87,22 @@ const MapView: React.FC<MapViewProps> = memo(({
         moved.current = false; 
         startPos.current = { x: e.clientX, y: e.clientY }; 
         startOffset.current = { ...offset }; 
-        (e.target as HTMLElement).setPointerCapture(e.pointerId); 
+        // Capture on currentTarget (the map) to ensure we get the Up event
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); 
       }}
       onPointerMove={(e) => { 
         if (!isDragging.current) return; 
         const dx = e.clientX - startPos.current.x; 
         const dy = e.clientY - startPos.current.y; 
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) moved.current = true; 
-        setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy }); 
+        // Only mark as moved if jitter is significant
+        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+          moved.current = true;
+          setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy }); 
+        }
       }}
       onPointerUp={(e) => { 
         isDragging.current = false; 
-        (e.target as HTMLElement).releasePointerCapture(e.pointerId); 
+        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); 
       }}
     >
       <div className="absolute transition-transform duration-75" style={{ transform: `translate3d(${safeX}px, ${safeY}px, 0) scale(${safeZoom})`, width: GRID_SIZE, height: GRID_SIZE, transformOrigin: '0 0' }}>
@@ -131,8 +135,10 @@ const MapView: React.FC<MapViewProps> = memo(({
             <div 
               key={p.id} 
               onPointerUp={(e) => { 
-                e.stopPropagation(); 
-                if (!moved.current) onSelect(p.id); 
+                // CRITICAL: Do NOT stop propagation here, or the parent won't see the 'isDragging = false' update
+                if (!moved.current) {
+                  onSelect(p.id);
+                }
               }} 
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20 cursor-pointer pointer-events-auto" 
               style={{ left: p.x, top: p.y, width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -162,8 +168,9 @@ const MapView: React.FC<MapViewProps> = memo(({
             <div 
               key={s.id} 
               onPointerUp={(e) => { 
-                e.stopPropagation(); 
-                if (!moved.current) onSelect(s.id); 
+                if (!moved.current) {
+                  onSelect(s.id); 
+                }
               }} 
               className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-40 pointer-events-auto" 
               style={{ left: pos.x, top: pos.y, width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
