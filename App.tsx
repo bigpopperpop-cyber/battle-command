@@ -192,20 +192,22 @@ const App: React.FC = () => {
     }
   }, [playerRole, selectedId]);
 
-  const handleSelect = useCallback((id: string) => {
+  const handleSelect = useCallback((id: string | null) => {
     const currentG = gameStateRef.current;
     if (isSettingCourse && selectedId && selectedId.startsWith('s-')) {
-      const ship = currentG?.ships.find(s => s.id === selectedId);
-      if (ship && ship.owner === playerRole) {
-        const nextState = JSON.parse(JSON.stringify(currentG)) as GameState;
-        nextState.ships = ensureArray<Ship>(nextState.ships);
-        const targetShip = nextState.ships.find(s => s.id === selectedId);
-        if (targetShip) {
-          targetShip.targetPlanetId = id;
-          targetShip.status = 'MOVING';
-          targetShip.currentPlanetId = null;
-          nextState.readyPlayers = ensureArray<Owner>(nextState.readyPlayers).filter(p => p !== playerRole);
-          if (db) set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
+      if (id && id !== selectedId) {
+        const ship = currentG?.ships.find(s => s.id === selectedId);
+        if (ship && ship.owner === playerRole) {
+          const nextState = JSON.parse(JSON.stringify(currentG)) as GameState;
+          nextState.ships = ensureArray<Ship>(nextState.ships);
+          const targetShip = nextState.ships.find(s => s.id === selectedId);
+          if (targetShip) {
+            targetShip.targetPlanetId = id;
+            targetShip.status = 'MOVING';
+            targetShip.currentPlanetId = null;
+            nextState.readyPlayers = ensureArray<Owner>(nextState.readyPlayers).filter(p => p !== playerRole);
+            if (db) set(ref(db, `lobbies/${FAMILY_GALAXY_ID}/state`), nextState);
+          }
         }
       }
       setIsSettingCourse(false);
@@ -348,6 +350,10 @@ const App: React.FC = () => {
   const activeCredits = gameState?.playerCredits?.[playerRole] ?? 0;
   const activeName = gameState?.playerNames?.[playerRole] ?? (playerRole || 'COMMANDER');
   const isReady = gameState?.readyPlayers?.includes(playerRole) ?? false;
+  
+  // Only require readiness from HUMAN players
+  const humanCount = (gameState?.playerCount || 1) - (gameState?.aiPlayers?.length || 0);
+  const allHumansReady = (gameState?.readyPlayers?.length || 0) >= humanCount;
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col bg-[#020617] text-slate-200">
@@ -406,7 +412,7 @@ const App: React.FC = () => {
         
         {playerRole === 'P1' ? (
           <button 
-            disabled={isProcessing || (gameState?.readyPlayers?.length || 0) < (gameState?.playerCount || 1)}
+            disabled={isProcessing || !allHumansReady}
             onClick={handleExecuteTurn} 
             className="px-8 py-4 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-20 text-white rounded-2xl font-black text-xs uppercase tracking-widest shadow-xl transition-all active:scale-95"
           >

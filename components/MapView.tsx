@@ -8,7 +8,7 @@ interface MapViewProps {
   planets: Planet[];
   ships: Ship[];
   selectedId: string | null;
-  onSelect: (id: string) => void;
+  onSelect: (id: string | null) => void;
   isSettingCourse: boolean;
   combatEvents?: CombatEvent[];
   activeEvents?: GalacticEvent[];
@@ -87,29 +87,43 @@ const MapView: React.FC<MapViewProps> = memo(({
         moved.current = false; 
         startPos.current = { x: e.clientX, y: e.clientY }; 
         startOffset.current = { ...offset }; 
-        // Capture on currentTarget (the map) to ensure we get the Up event
         (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId); 
       }}
       onPointerMove={(e) => { 
         if (!isDragging.current) return; 
         const dx = e.clientX - startPos.current.x; 
         const dy = e.clientY - startPos.current.y; 
-        // Only mark as moved if jitter is significant
-        if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+        if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
           moved.current = true;
           setOffset({ x: startOffset.current.x + dx, y: startOffset.current.y + dy }); 
         }
       }}
       onPointerUp={(e) => { 
+        const el = (e.currentTarget as HTMLElement);
+        el.releasePointerCapture(e.pointerId);
+
+        // If it wasn't a drag, it's a click
+        if (!moved.current) {
+          // Because pointer capture is active, e.target is the Map. 
+          // We must use elementFromPoint to see what's physically under the finger/cursor.
+          const topEl = document.elementFromPoint(e.clientX, e.clientY);
+          const interactiveObj = topEl?.closest('[data-id]');
+          
+          if (interactiveObj) {
+            onSelect(interactiveObj.getAttribute('data-id'));
+          } else {
+            onSelect(null);
+          }
+        }
+        
         isDragging.current = false; 
-        (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); 
       }}
     >
-      <div className="absolute transition-transform duration-75" style={{ transform: `translate3d(${safeX}px, ${safeY}px, 0) scale(${safeZoom})`, width: GRID_SIZE, height: GRID_SIZE, transformOrigin: '0 0' }}>
+      <div className="absolute transition-transform duration-75 pointer-events-none" style={{ transform: `translate3d(${safeX}px, ${safeY}px, 0) scale(${safeZoom})`, width: GRID_SIZE, height: GRID_SIZE, transformOrigin: '0 0' }}>
         
-        <div className="absolute inset-0 pointer-events-none opacity-5 bg-[radial-gradient(circle,white_1px,transparent_1px)] bg-[length:100px_100px]" />
+        <div className="absolute inset-0 opacity-5 bg-[radial-gradient(circle,white_1px,transparent_1px)] bg-[length:100px_100px]" />
 
-        <svg className="absolute inset-0 w-full h-full pointer-events-none z-10 overflow-visible">
+        <svg className="absolute inset-0 w-full h-full z-10 overflow-visible">
           {combatEvents.map(ev => {
             if (!ev.attackerPos || !ev.targetPos) return null;
             return (
@@ -134,12 +148,7 @@ const MapView: React.FC<MapViewProps> = memo(({
           return (
             <div 
               key={p.id} 
-              onPointerUp={(e) => { 
-                // CRITICAL: Do NOT stop propagation here, or the parent won't see the 'isDragging = false' update
-                if (!moved.current) {
-                  onSelect(p.id);
-                }
-              }} 
+              data-id={p.id}
               className="absolute -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-20 cursor-pointer pointer-events-auto" 
               style={{ left: p.x, top: p.y, width: 140, height: 140, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
@@ -167,11 +176,7 @@ const MapView: React.FC<MapViewProps> = memo(({
           return (
             <div 
               key={s.id} 
-              onPointerUp={(e) => { 
-                if (!moved.current) {
-                  onSelect(s.id); 
-                }
-              }} 
+              data-id={s.id}
               className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer z-40 pointer-events-auto" 
               style={{ left: pos.x, top: pos.y, width: 60, height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             >
@@ -187,8 +192,8 @@ const MapView: React.FC<MapViewProps> = memo(({
       </div>
 
       <div className="absolute bottom-6 right-6 flex flex-col gap-2 z-50">
-        <button onClick={() => setZoom(z => Math.min(2, z + 0.15))} className="w-12 h-12 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-xl active:bg-slate-800 transition-colors">+</button>
-        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.15))} className="w-12 h-12 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-xl active:bg-slate-800 transition-colors">-</button>
+        <button onClick={(e) => { e.stopPropagation(); setZoom(z => Math.min(2, z + 0.15)); }} className="w-12 h-12 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-xl active:bg-slate-800 transition-colors pointer-events-auto">+</button>
+        <button onClick={(e) => { e.stopPropagation(); setZoom(z => Math.max(0.1, z - 0.15)); }} className="w-12 h-12 bg-slate-900 rounded-xl font-bold flex items-center justify-center border border-white/10 text-white shadow-xl active:bg-slate-800 transition-colors pointer-events-auto">-</button>
       </div>
     </div>
   );
